@@ -1,0 +1,18 @@
+[project]
+name = "handytree"
+dynamic = ["version"]
+description = "An interactive decision tree building tool."
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [
+  {name = "Azure Chen", email = "jhcax126@outlook.com"}
+]
+maintainers = [
+  {name = "Azure Chen", email = "jhcax126@outlook.com"}
+]
+dependencies = [
+    "numpy>=2.3.0",
+    "pandas>=2.3.0",
+]
+license = "GPL-3.0-or-later"
+license-files = ["LICEN[CS]E*", "vendored/licenses/*.txt", "AUTHORS.md"]
