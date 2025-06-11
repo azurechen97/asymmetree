@@ -15,9 +15,12 @@ from .utils import (
     operator_reverse_map,
 )
 from .metrics import (
-    entropy,
     get_precision,
     get_recall,
+    information_gain,
+    intrinsic_information,
+    information_gain_ratio,
+    information_value,
 )
 
 __all__ = [
@@ -27,7 +30,10 @@ __all__ = [
     "notin",
     "operator_map",
     "operator_reverse_map",
-    "entropy",
     "get_precision",
     "get_recall",
+    "information_gain",
+    "intrinsic_information",
+    "information_gain_ratio",
+    "information_value",
 ]
