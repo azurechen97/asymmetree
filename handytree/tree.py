@@ -102,12 +102,13 @@ class HandyTree:
         self.cat_features = None
         self.lt_only_features = None
         self.gt_only_features = None
+        self.pinned_features = None
+        self.extra_metrics = None
+        self.extra_metrics_data = None
+
         self.total_pos = None
         self.root_precision = None
         self.root_recall = None
-        self.extra_metrics = None
-        self.extra_metrics_data = None
-        self.pinned_features = None
 
         # Tree initialization
         self.tree = None
@@ -122,6 +123,7 @@ class HandyTree:
         cat_features=None,
         lt_only_features=None,
         gt_only_features=None,
+        pinned_features=None,
         extra_metrics=None,
         extra_metrics_data=None,
         total_pos=None,
@@ -132,6 +134,7 @@ class HandyTree:
         self.cat_features = cat_features
         self.lt_only_features = lt_only_features
         self.gt_only_features = gt_only_features
+        self.pinned_features = pinned_features
         self.extra_metrics = extra_metrics
         self.extra_metrics_data = extra_metrics_data
         self.total_pos = total_pos
@@ -390,6 +393,7 @@ class HandyTree:
         cat_features=None,
         lt_only_features=None,
         gt_only_features=None,
+        pinned_features=None,
         extra_metrics=None,
         extra_metrics_data=None,
         total_pos=None,
