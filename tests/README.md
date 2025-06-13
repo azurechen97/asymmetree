@@ -23,6 +23,19 @@ Tests for the `AsymmeTree` class covering:
 - SQL generation
 - Error handling
 
+### `test_asymmetree_advanced.py`
+Advanced tests for the `AsymmeTree` class focusing on complex functionality:
+- `fit()` method in auto mode with various data types
+- `split()` method for manual/auto node splitting
+- `quick_split()` method for rapid splitting
+- `continue_fit()` method for resuming tree building
+- Tree building with feature constraints (lt_only, gt_only, pinned features)
+- Handling edge cases (all positive/negative samples)
+- Tree pruning and relabeling after fitting
+- SQL generation from fitted trees
+- Weighted sample handling
+- Categorical feature processing
+
 ### `test_integration.py`
 Integration tests covering:
 - Complete workflow from data import to prediction

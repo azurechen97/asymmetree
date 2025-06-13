@@ -211,8 +211,8 @@ class AsymmeTree:
 
         # Tree initialization
         self.tree = None
-        self.node_dict = None
-        self.node_counter = None
+        self.node_dict = {}
+        self.node_counter = 0
 
     def import_data(
         self,
@@ -309,7 +309,13 @@ class AsymmeTree:
                 prediction=1,
                 id=0,
             )
-            self.node_dict = {0: self.tree}
+            # Set metrics for the root node
+            self.tree.metrics = {
+                "Precision": self.root_precision,
+                "Recall": self.root_recall,
+                "Positives": root_pos,
+            }
+            self.node_dict[0] = self.tree
             self.node_counter = 1
         else:
             self.reset_tree_data(node=self.tree)
@@ -924,7 +930,7 @@ class AsymmeTree:
             node = self.tree
 
         prefix = "|   " * depth
-        node_str = f"Node {node.id}"
+        node_str = f"Node {node.id}: "
 
         if depth == 0:
             node_str += "Root"
@@ -1519,6 +1525,15 @@ class AsymmeTree:
         Raises:
             ExitSplit: When splitting should be terminated.
         """
+        if cat_features is None:
+            cat_features = []
+        if lt_only_features is None:
+            lt_only_features = []
+        if gt_only_features is None:
+            gt_only_features = []
+        if pinned_features is None:
+            pinned_features = []
+
         recall = node.metrics["Recall"]
 
         if len(y) == 0 or np.sum(y) == 0:
@@ -1715,28 +1730,28 @@ class AsymmeTree:
                     "Best Split",
                 )
 
-        split_info = None
-        while not isinstance(split_info, dict):
-            chosen_feature = input_feature()
-            if chosen_feature == "/q":
-                raise ExitSplit("Exit by user.")
+            split_info = None
+            while not isinstance(split_info, dict):
+                chosen_feature = input_feature()
+                if chosen_feature == "/q":
+                    raise ExitSplit("Exit by user.")
 
-            print(f"\nFeature {chosen_feature} is selected. Top splits:")
-            for j, split_info in enumerate(
-                splits[chosen_feature][: self.condition_shown_num]
-            ):
-                self._print_metrics(
-                    split_info,
-                    X,
-                    y,
-                    weights,
-                    extra_metrics,
-                    extra_metrics_data,
-                    f"Split {j}",
-                )
-            split_info = input_condition(chosen_feature)
-            if split_info == "/q":
-                raise ExitSplit("Exit by user.")
+                print(f"\nFeature {chosen_feature} is selected. Top splits:")
+                for j, split_info in enumerate(
+                    splits[chosen_feature][: self.condition_shown_num]
+                ):
+                    self._print_metrics(
+                        split_info,
+                        X,
+                        y,
+                        weights,
+                        extra_metrics,
+                        extra_metrics_data,
+                        f"Split {j}",
+                    )
+                split_info = input_condition(chosen_feature)
+                if split_info == "/q":
+                    raise ExitSplit("Exit by user.")
 
         left_mask, right_mask = self._create_children(
             chosen_feature,

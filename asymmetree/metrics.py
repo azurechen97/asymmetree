@@ -262,6 +262,8 @@ def get_precision(y_pred, y_true, weights=1):
         y_true = y_true.to_numpy(dtype="int64")
     if isinstance(weights, pd.Series):
         weights = weights.to_numpy(dtype="float64")
+    if np.sum(y_pred * weights) == 0:
+        return 0
     return _get_precision_njit(y_pred, y_true, weights)
 
 
@@ -303,6 +305,8 @@ def get_recall(y_pred, y_true, weights=1, total_pos=None):
         weights = weights.to_numpy(dtype="float64")
     if total_pos is None:
         total_pos = np.sum(y_true * weights)
+    if total_pos == 0:
+        return 0
     return _get_recall_njit(y_pred, y_true, weights, total_pos)
 
 
