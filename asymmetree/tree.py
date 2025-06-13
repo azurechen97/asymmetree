@@ -6,12 +6,12 @@ import numpy as np
 import pandas as pd
 from pandas.api.types import is_numeric_dtype, is_string_dtype, is_bool_dtype
 
-from handytree.metrics import *
-from handytree.utils import *
+from asymmetree.metrics import *
+from asymmetree.utils import *
 
 
 class Node:
-    """A node in the HandyTree decision tree.
+    """A node in the AsymmeTree decision tree.
 
     Represents a single node in the decision tree structure, containing split conditions,
     predictions, metrics, and references to parent/child nodes.
@@ -107,12 +107,12 @@ class Node:
         return json.dumps(self.to_dict())
 
 
-class HandyTree:
+class AsymmeTree:
     """Interactive decision tree classifier optimized for highly imbalanced datasets.
 
-    HandyTree implements a novel training methodology for extreme class imbalance scenarios
+    AsymmeTree implements a novel training methodology for extreme class imbalance scenarios
     like fraud detection and anomaly detection. Unlike traditional trees that optimize for
-    node purity, HandyTree focuses on maximizing precision while capturing sufficient recall.
+    node purity, AsymmeTree focuses on maximizing precision while capturing sufficient recall.
 
     Key Features:
         - **Imbalanced-Optimized Splitting**: Left child = "positive node" (higher positive ratio),
@@ -149,7 +149,7 @@ class HandyTree:
         show_metrics=False,
         verbose=False,
     ):
-        """Initialize HandyTree with configuration parameters.
+        """Initialize AsymmeTree with configuration parameters.
 
         Args:
             max_depth (int): Maximum depth of the tree. Defaults to 5.
@@ -542,7 +542,7 @@ class HandyTree:
         total_pos=None,
         auto=False,
     ):
-        """Fit the HandyTree model to training data.
+        """Fit the AsymmeTree model to training data.
 
         Builds the decision tree automatically or interactively based on the auto parameter.
         Includes automatic pruning when auto=True.
@@ -1917,12 +1917,12 @@ class HandyTree:
         pass
 
     def __repr__(self) -> str:
-        """Return string representation of HandyTree parameters.
+        """Return string representation of AsymmeTree parameters.
 
         Returns:
             str: String representation showing key configuration parameters.
         """
-        return f"HandyTree(max_depth={self.max_depth}, max_cat_unique={self.max_cat_unique}, cat_value_min_ratio={self.cat_value_min_ratio}, num_bin={self.num_bin}, node_max_precision={self.node_max_precision}, node_min_recall={self.node_min_recall}, leaf_min_precision={self.leaf_min_precision}, feature_shown_num={self.feature_shown_num}, condition_shown_num={self.condition_shown_num}, sorted_by={self.sorted_by}, ignore_null={self.ignore_null}, show_metrics={self.show_metrics}, verbose={self.verbose})"
+        return f"AsymmeTree(max_depth={self.max_depth}, max_cat_unique={self.max_cat_unique}, cat_value_min_ratio={self.cat_value_min_ratio}, num_bin={self.num_bin}, node_max_precision={self.node_max_precision}, node_min_recall={self.node_min_recall}, leaf_min_precision={self.leaf_min_precision}, feature_shown_num={self.feature_shown_num}, condition_shown_num={self.condition_shown_num}, sorted_by={self.sorted_by}, ignore_null={self.ignore_null}, show_metrics={self.show_metrics}, verbose={self.verbose})"
 
 
 class ExitSplit(Exception):
