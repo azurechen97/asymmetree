@@ -11,6 +11,25 @@ from handytree.utils import *
 
 
 class Node:
+    """A node in the HandyTree decision tree.
+
+    Represents a single node in the decision tree structure, containing split conditions,
+    predictions, metrics, and references to parent/child nodes.
+
+    Attributes:
+        index: Index of data samples belonging to this node.
+        parent: Reference to parent node.
+        children: List of child nodes (None for leaf nodes).
+        split_feature: Feature name used for splitting at this node.
+        operator: Comparison operator used for the split condition.
+        split_values: Values used in the split condition.
+        is_leaf: Whether this node is a leaf node.
+        prediction: Prediction value (0 or 1) for leaf nodes.
+        metrics: Dictionary containing node performance metrics.
+        depth: Depth of this node in the tree (root = 0).
+        id: Unique identifier for this node.
+    """
+
     def __init__(
         self,
         index=None,
@@ -25,6 +44,21 @@ class Node:
         depth=None,
         id=None,
     ):
+        """Initialize a new Node.
+
+        Args:
+            index: Index of data samples belonging to this node.
+            parent: Reference to parent node.
+            children: List of child nodes.
+            split_feature: Feature name used for splitting.
+            operator: Comparison operator for split condition.
+            split_values: Values used in split condition.
+            is_leaf: Whether this is a leaf node. Defaults to True.
+            prediction: Prediction value for leaf nodes.
+            metrics: Performance metrics dictionary.
+            depth: Node depth in tree.
+            id: Unique node identifier.
+        """
         self.index = index
         self.parent = parent
         self.children = children
@@ -38,12 +72,19 @@ class Node:
         self.id = id
 
     def __repr__(self):
+        """Return string representation of the node."""
         return f"Node(id={self.id}, depth={self.depth}, is_leaf={self.is_leaf}, split_feature={self.split_feature}, operator={self.operator}, split_values={self.split_values}, prediction={self.prediction}, metrics={self.metrics})"
 
     def __str__(self):
+        """Return string representation of the node."""
         return self.__repr__()
 
     def to_dict(self):
+        """Convert node to dictionary representation.
+
+        Returns:
+            dict: Dictionary containing node attributes with parent/children as IDs.
+        """
         d = self.__dict__.copy()
         del d["indices"]
         del d["metrics"]
@@ -58,10 +99,39 @@ class Node:
         return d
 
     def to_json(self):
+        """Convert node to JSON string.
+
+        Returns:
+            str: JSON representation of the node.
+        """
         return json.dumps(self.to_dict())
 
 
 class HandyTree:
+    """Interactive decision tree classifier optimized for highly imbalanced datasets.
+
+    HandyTree implements a novel training methodology for extreme class imbalance scenarios
+    like fraud detection and anomaly detection. Unlike traditional trees that optimize for
+    node purity, HandyTree focuses on maximizing precision while capturing sufficient recall.
+
+    Key Features:
+        - **Imbalanced-Optimized Splitting**: Left child = "positive node" (higher positive ratio),
+          right child = "neutral node" (lower positive ratio)
+        - **F-Score Based Optimization**: Optimizes splits using the F-score of the positive
+          node, balancing precision and recall for imbalanced settings
+        - **Traditional Methods Supported**: Also supports purity-based approaches using
+          information gain (ig), information gain ratio (igr), or information value (iv)
+        - **Dual Mode Operation**: Interactive, automatic, or hybrid modes allowing domain
+          expertise integration throughout the tree building process
+        - **Flexible Constraints**: Handles categorical/numerical features with custom operators
+
+    Ideal for binary classification with significant class imbalance (< 5% positive class):
+    fraud detection, medical diagnosis, quality control, marketing conversion optimization.
+
+    Maintains interpretability while achieving superior performance on imbalanced datasets
+    compared to traditional entropy or Gini-based approaches.
+    """
+
     def __init__(
         self,
         max_depth=5,
@@ -79,6 +149,24 @@ class HandyTree:
         show_metrics=False,
         verbose=False,
     ):
+        """Initialize HandyTree with configuration parameters.
+
+        Args:
+            max_depth (int): Maximum depth of the tree. Defaults to 5.
+            max_cat_unique (int): Maximum unique values for categorical features. Defaults to 50.
+            cat_value_min_recall (float): Minimum recall threshold for categorical values. Defaults to 0.005.
+            num_bin (int): Number of bins for numerical feature discretization. Defaults to 25.
+            node_max_precision (float): Maximum precision threshold for node splitting. Defaults to 0.3.
+            node_min_recall (float): Minimum recall threshold for nodes. Defaults to 0.05.
+            leaf_min_precision (float): Minimum precision threshold for leaf nodes. Defaults to 0.15.
+            feature_shown_num (int): Number of features to show in interactive mode. Defaults to 5.
+            condition_shown_num (int): Number of conditions to show in interactive mode. Defaults to 5.
+            sorted_by (str): Metric to sort splits by ('f_score', 'ig', 'igr', 'iv'). Defaults to 'f_score'.
+            pos_weight (float): Weight for positive class in calculations. Defaults to 1.
+            ignore_null (bool): Whether to ignore null values. Defaults to True.
+            show_metrics (bool): Whether to show metrics in tree display. Defaults to False.
+            verbose (bool): Whether to print verbose output. Defaults to False.
+        """
         # Parameters initialization
         self.max_depth = max_depth
         self.max_cat_unique = max_cat_unique
@@ -130,6 +218,20 @@ class HandyTree:
         extra_metrics_data=None,
         total_pos=None,
     ):
+        """Import training data and configure feature constraints.
+
+        Args:
+            X (pd.DataFrame): Feature matrix.
+            y (pd.Series or np.array): Target variable (binary).
+            weights (pd.Series or np.array, optional): Sample weights.
+            cat_features (list, optional): List of categorical feature names.
+            lt_only_features (list, optional): Features that can only use '<' operators.
+            gt_only_features (list, optional): Features that can only use '>' operators.
+            pinned_features (list, optional): Features to prioritize in splitting.
+            extra_metrics (dict, optional): Additional metrics to calculate.
+            extra_metrics_data (pd.DataFrame, optional): Data for extra metrics.
+            total_pos (float, optional): Total positive samples for recall calculation.
+        """
         self.X = X
         self.y = y
         self.weights = weights
@@ -145,6 +247,11 @@ class HandyTree:
         self._preprocess_data()
 
     def _preprocess_data(self):
+        """Preprocess imported data and initialize tree structure.
+
+        Handles data type conversions, feature type detection, weight initialization,
+        and creates the root node of the tree.
+        """
         if isinstance(self.y, np.ndarray):
             self.y = pd.Series(self.y)
         if isinstance(self.y, pd.Series) and not self.y.index.equals(self.X.index):
@@ -191,6 +298,15 @@ class HandyTree:
             self.reset_tree_data(node=self.tree)
 
     def reset_tree_data(self, node: Node = None, mask=None):
+        """Reset node data and metrics after data changes.
+
+        Recursively updates node indices and metrics for all nodes in the tree
+        based on the current data and provided mask.
+
+        Args:
+            node (Node, optional): Node to reset. Defaults to root node.
+            mask (pd.Series, optional): Boolean mask for data filtering.
+        """
         if not node:
             node = self.tree
         if node is self.tree or mask is None:
@@ -233,6 +349,18 @@ class HandyTree:
             self.reset_tree_data(node=right_child, mask=(~left_mask) & mask)
 
     def split(self, id: int = None, auto=False):
+        """Interactively split a node in the tree.
+
+        Provides interactive interface for selecting features and split conditions,
+        or automatically selects the best split based on the configured metric.
+
+        Args:
+            id (int, optional): ID of node to split. Defaults to root (0).
+            auto (bool): Whether to automatically select best split. Defaults to False.
+
+        Raises:
+            ValueError: If node with given ID is not found.
+        """
         if id is None:
             id = 0
         if id not in self.node_dict:
@@ -302,6 +430,19 @@ class HandyTree:
         )
 
     def quick_split(self, id: int = None, sql: str = None, overwrite=False):
+        """Quickly split a node using SQL-style condition or auto-selection.
+
+        Provides a fast way to split nodes either automatically or with a
+        pre-specified SQL-style condition.
+
+        Args:
+            id (int, optional): ID of node to split. Defaults to root (0).
+            sql (str, optional): SQL-style condition for splitting (e.g., '>=100').
+            overwrite (bool): Whether to overwrite existing children. Defaults to False.
+
+        Raises:
+            ValueError: If node ID not found or can't overwrite without permission.
+        """
         if id is None:
             id = 0
         if id not in self.node_dict:
@@ -401,6 +542,27 @@ class HandyTree:
         total_pos=None,
         auto=False,
     ):
+        """Fit the HandyTree model to training data.
+
+        Builds the decision tree automatically or interactively based on the auto parameter.
+        Includes automatic pruning when auto=True.
+
+        Args:
+            X (pd.DataFrame): Feature matrix.
+            y (pd.Series or np.array): Target variable (binary).
+            weights (pd.Series or np.array, optional): Sample weights.
+            cat_features (list, optional): List of categorical feature names.
+            lt_only_features (list, optional): Features that can only use '<' operators.
+            gt_only_features (list, optional): Features that can only use '>' operators.
+            pinned_features (list, optional): Features to prioritize in splitting.
+            extra_metrics (dict, optional): Additional metrics to calculate.
+            extra_metrics_data (pd.DataFrame, optional): Data for extra metrics.
+            total_pos (float, optional): Total positive samples for recall calculation.
+            auto (bool): Whether to build tree automatically. Defaults to False.
+
+        Raises:
+            ValueError: If tree already has nodes or no data provided.
+        """
         if len(self.node_dict) > 1:
             raise ValueError(
                 "Tree already has nodes. Initialize a new tree to use fit."
@@ -479,6 +641,18 @@ class HandyTree:
         )
 
     def continue_fit(self, id, auto=False):
+        """Continue building the tree from a specific node.
+
+        Resumes tree construction from the specified node, useful for partial
+        tree building or expanding specific branches.
+
+        Args:
+            id (int): ID of node to continue building from.
+            auto (bool): Whether to build automatically. Defaults to False.
+
+        Raises:
+            ValueError: If node with given ID is not found.
+        """
         if id not in self.node_dict:
             raise ValueError(f"Node with id {id} not found")
         node = self.node_dict[id]
@@ -534,6 +708,14 @@ class HandyTree:
         )
 
     def toggle_prediction(self, id: int = None):
+        """Toggle the prediction of a leaf node between 0 and 1.
+
+        Args:
+            id (int): ID of leaf node to toggle.
+
+        Raises:
+            ValueError: If node not found or node is not a leaf.
+        """
         if id not in self.node_dict:
             raise ValueError(f"Node with id {id} not found")
         node = self.node_dict[id]
@@ -542,6 +724,17 @@ class HandyTree:
         node.prediction = 1 - node.prediction
 
     def relabel(self, min_precision=None, min_recall=None):
+        """Relabel leaf nodes based on precision and recall thresholds.
+
+        Updates prediction labels for all leaf nodes based on whether they
+        meet the minimum precision and recall requirements.
+
+        Args:
+            min_precision (float, optional): Minimum precision threshold.
+                Defaults to leaf_min_precision.
+            min_recall (float, optional): Minimum recall threshold.
+                Defaults to node_min_recall.
+        """
         if min_precision is None:
             min_precision = self.leaf_min_precision
         if min_recall is None:
@@ -556,6 +749,14 @@ class HandyTree:
                 )
 
     def prune(self, node: Node = None):
+        """Prune the tree by merging nodes with identical predictions.
+
+        Recursively removes unnecessary splits where both children have
+        the same prediction value.
+
+        Args:
+            node (Node, optional): Node to start pruning from. Defaults to root.
+        """
         if node is None:
             node = self.tree
         if (
@@ -578,6 +779,16 @@ class HandyTree:
                 _ = self.node_dict.pop(id)
 
     def clear_children(self, id: int = None):
+        """Recursively remove all children of a node.
+
+        Removes all descendant nodes and converts the specified node back to a leaf.
+
+        Args:
+            id (int): ID of node whose children should be cleared.
+
+        Raises:
+            ValueError: If node with given ID is not found.
+        """
         if id not in self.node_dict:
             raise ValueError(f"Node with id {id} not found")
         node = self.node_dict[id]
@@ -598,6 +809,19 @@ class HandyTree:
         extra_metrics_data=None,
         total_pos=None,
     ):
+        """Calculate performance metrics for predictions.
+
+        Args:
+            pred (np.array, optional): Predictions. Defaults to model predictions.
+            true (pd.Series, optional): True labels. Defaults to training labels.
+            weights (pd.Series, optional): Sample weights. Defaults to training weights.
+            extra_metrics (dict, optional): Additional metrics. Defaults to model extra_metrics.
+            extra_metrics_data (pd.DataFrame, optional): Data for extra metrics.
+            total_pos (float, optional): Total positive samples.
+
+        Returns:
+            dict: Dictionary containing calculated metrics.
+        """
         if pred is None:
             pred = self.predict(self.X)
         if true is None:
@@ -632,6 +856,16 @@ class HandyTree:
         extra_metrics_data=None,
         total_pos=None,
     ):
+        """Print performance metrics for predictions.
+
+        Args:
+            pred (np.array, optional): Predictions. Defaults to model predictions.
+            true (pd.Series, optional): True labels. Defaults to training labels.
+            weights (pd.Series, optional): Sample weights. Defaults to training weights.
+            extra_metrics (dict, optional): Additional metrics. Defaults to model extra_metrics.
+            extra_metrics_data (pd.DataFrame, optional): Data for extra metrics.
+            total_pos (float, optional): Total positive samples.
+        """
         metrics = self.metrics(
             pred, true, weights, extra_metrics, extra_metrics_data, total_pos
         )
@@ -647,12 +881,28 @@ class HandyTree:
         print(", ".join(extra_metrics_str))
 
     def predict(self, X):
+        """Generate predictions for given features.
+
+        Args:
+            X (pd.DataFrame): Feature matrix to predict on.
+
+        Returns:
+            np.array: Binary predictions (0 or 1).
+        """
         predictions = self._predict_mask(X, self.tree).astype(int)
         return predictions
 
     def print(
         self, node: Node = None, current_node: Node = None, show_metrics=False, depth=0
     ):
+        """Print tree structure in a readable format.
+
+        Args:
+            node (Node, optional): Node to start printing from. Defaults to root.
+            current_node (Node, optional): Node to highlight as current.
+            show_metrics (bool): Whether to display node metrics. Defaults to False.
+            depth (int): Current depth for indentation. Defaults to 0.
+        """
         if node is None:
             node = self.tree
 
@@ -684,6 +934,15 @@ class HandyTree:
             print(f"{prefix}--> Prediction: {node.prediction}")
 
     def to_sql(self, node: Node = None):
+        """Convert tree to SQL WHERE clause representation.
+
+        Args:
+            node (Node, optional): Node to start conversion from. Defaults to root.
+
+        Returns:
+            str: SQL WHERE clause representing the tree logic.
+        """
+
         def dfs(node: Node, path, result):
             if not node:
                 return
@@ -722,15 +981,30 @@ class HandyTree:
         return sql
 
     def to_dict(self):
+        """Convert tree to dictionary representation.
+
+        Returns:
+            dict: Dictionary containing all nodes with their attributes.
+        """
         nodes = {}
         for id in self.node_dict:
             nodes[id] = self.node_dict[id].to_dict()
         return nodes
 
     def to_json(self):
+        """Convert tree to JSON string.
+
+        Returns:
+            str: JSON representation of the tree.
+        """
         return json.dumps(self.to_dict())
 
     def from_dict(self, nodes: dict):
+        """Load tree from dictionary representation.
+
+        Args:
+            nodes (dict): Dictionary containing node data.
+        """
         if "0" in nodes:
             nodes = {int(k): nodes[k] for k in nodes}
         self.node_dict = {}
@@ -764,15 +1038,30 @@ class HandyTree:
             )
 
     def from_json(self, json_str):
+        """Load tree from JSON string.
+
+        Args:
+            json_str (str): JSON representation of the tree.
+        """
         nodes = json.loads(json_str)
         nodes = {int(k): nodes[k] for k in nodes}
         self.from_dict(nodes)
 
     def save(self, file_path):
+        """Save tree to file.
+
+        Args:
+            file_path (str): Path to save the tree file.
+        """
         with open(file_path, "w") as f:
             json.dump(self.to_dict(), f, indent=4)
 
     def load(self, file_path):
+        """Load tree from file.
+
+        Args:
+            file_path (str): Path to the tree file.
+        """
         with open(file_path, "r") as f:
             nodes = json.load(f)
         nodes = {int(k): nodes[k] for k in nodes}
@@ -781,6 +1070,22 @@ class HandyTree:
     def _best_splits(
         self, X, y, weights, cat_features, lt_only_features, gt_only_features
     ):
+        """Find the best split conditions for all features.
+
+        Analyzes each feature to find optimal split conditions based on the
+        configured sorting metric (f_score, information gain, etc.).
+
+        Args:
+            X (pd.DataFrame): Feature matrix.
+            y (pd.Series): Target variable.
+            weights (pd.Series): Sample weights.
+            cat_features (list): List of categorical feature names.
+            lt_only_features (list): Features restricted to '<' operators.
+            gt_only_features (list): Features restricted to '>' operators.
+
+        Returns:
+            dict: Dictionary mapping feature names to sorted lists of split options.
+        """
         splits = {}
         node_pos = (y * weights).sum()
         for feature in X.columns:
@@ -1017,6 +1322,24 @@ class HandyTree:
         auto,
         node,
     ):
+        """Recursively build the decision tree.
+
+        Core tree building logic that handles node splitting, stopping criteria,
+        and recursive expansion of child nodes.
+
+        Args:
+            X (pd.DataFrame): Feature matrix for current node.
+            y (pd.Series): Target variable for current node.
+            weights (pd.Series): Sample weights for current node.
+            cat_features (list): Categorical feature names.
+            lt_only_features (list): Features restricted to '<' operators.
+            gt_only_features (list): Features restricted to '>' operators.
+            pinned_features (list): Features to prioritize.
+            extra_metrics (dict): Additional metrics to calculate.
+            extra_metrics_data (pd.DataFrame): Data for extra metrics.
+            auto (bool): Whether to build automatically.
+            node (Node): Current node being processed.
+        """
         self.print(self.tree, node, self.show_metrics)
 
         precision = node.metrics["Precision"]
@@ -1155,6 +1478,30 @@ class HandyTree:
         auto,
         node,
     ):
+        """Handle interactive or automatic node splitting.
+
+        Manages the process of selecting features and split conditions,
+        either through user interaction or automatic selection.
+
+        Args:
+            X (pd.DataFrame): Feature matrix for current node.
+            y (pd.Series): Target variable for current node.
+            weights (pd.Series): Sample weights for current node.
+            cat_features (list): Categorical feature names.
+            lt_only_features (list): Features restricted to '<' operators.
+            gt_only_features (list): Features restricted to '>' operators.
+            pinned_features (list): Features to prioritize.
+            extra_metrics (dict): Additional metrics to calculate.
+            extra_metrics_data (pd.DataFrame): Data for extra metrics.
+            auto (bool): Whether to split automatically.
+            node (Node): Node to split.
+
+        Returns:
+            tuple: Left and right masks for data splitting.
+
+        Raises:
+            ExitSplit: When splitting should be terminated.
+        """
         recall = node.metrics["Recall"]
 
         if len(y) == 0 or np.sum(y) == 0:
@@ -1397,6 +1744,22 @@ class HandyTree:
         extra_metrics_data,
         node,
     ):
+        """Perform quick split with predefined condition.
+
+        Args:
+            feature (str): Feature name for splitting.
+            operator (str): Comparison operator.
+            values: Split values.
+            X (pd.DataFrame): Feature matrix.
+            y (pd.Series): Target variable.
+            weights (pd.Series): Sample weights.
+            extra_metrics (dict): Additional metrics.
+            extra_metrics_data (pd.DataFrame): Data for extra metrics.
+            node (Node): Node to split.
+
+        Returns:
+            tuple: Left and right masks for data splitting.
+        """
         recall = node.metrics["Recall"]
 
         if len(y) == 0 or np.sum(y) == 0:
@@ -1420,6 +1783,23 @@ class HandyTree:
         return left_mask, right_mask
 
     def _create_children(self, feature, operator, values, X, y, weights, node):
+        """Create child nodes after splitting.
+
+        Creates left and right child nodes, calculates their metrics,
+        and updates the tree structure.
+
+        Args:
+            feature (str): Feature used for splitting.
+            operator (str): Comparison operator.
+            values: Split values.
+            X (pd.DataFrame): Feature matrix.
+            y (pd.Series): Target variable.
+            weights (pd.Series): Sample weights.
+            node (Node): Parent node.
+
+        Returns:
+            tuple: Left and right masks for the split.
+        """
         node.is_leaf = False
         node.children = []
 
@@ -1537,8 +1917,20 @@ class HandyTree:
         pass
 
     def __repr__(self) -> str:
+        """Return string representation of HandyTree parameters.
+
+        Returns:
+            str: String representation showing key configuration parameters.
+        """
         return f"HandyTree(max_depth={self.max_depth}, max_cat_unique={self.max_cat_unique}, cat_value_min_ratio={self.cat_value_min_ratio}, num_bin={self.num_bin}, node_max_precision={self.node_max_precision}, node_min_recall={self.node_min_recall}, leaf_min_precision={self.leaf_min_precision}, feature_shown_num={self.feature_shown_num}, condition_shown_num={self.condition_shown_num}, sorted_by={self.sorted_by}, ignore_null={self.ignore_null}, show_metrics={self.show_metrics}, verbose={self.verbose})"
 
 
 class ExitSplit(Exception):
+    """Exception raised to exit node splitting process.
+
+    Used to signal early termination of the splitting process due to
+    various conditions like user intervention, insufficient data quality,
+    or reaching stopping criteria.
+    """
+
     pass
