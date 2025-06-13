@@ -1,5 +1,5 @@
 """
-Metrics module for HandyTree decision tree evaluation.
+Metrics module for AsymmeTree decision tree evaluation.
 
 This module provides various metrics for evaluating decision tree performance,
 including information-theoretic measures and classification metrics.

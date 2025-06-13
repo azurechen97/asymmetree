@@ -1,11 +1,11 @@
-# HandyTree Makefile
+# AsymmeTree Makefile
 # Python project automation for development, testing, and deployment
 
 .PHONY: help install install-dev test lint format clean build publish run dev-run check-deps update-deps venv
 
 # Default target
 help:
-	@echo "HandyTree Development Makefile"
+	@echo "AsymmeTree Development Makefile"
 	@echo ""
 	@echo "Available targets:"
 	@echo "  help        Show this help message"
@@ -26,7 +26,7 @@ help:
 # Variables
 PYTHON := python3
 PIP := pip
-PACKAGE_NAME := handytree
+PACKAGE_NAME := asymmetree
 VENV_DIR := .venv
 
 # Virtual environment creation
@@ -93,12 +93,12 @@ publish: build
 
 # Run the main application
 run:
-	@echo "Running HandyTree..."
+	@echo "Running AsymmeTree..."
 	$(PYTHON) main.py
 
 # Run in development mode with verbose output
 dev-run:
-	@echo "Running HandyTree in development mode..."
+	@echo "Running AsymmeTree in development mode..."
 	$(PYTHON) -v main.py
 
 # Check for outdated dependencies

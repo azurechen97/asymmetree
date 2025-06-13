@@ -3,7 +3,7 @@ revision = 1
 requires-python = ">=3.12"
 
 [[package]]
-name = "handytree"
+name = "asymmetree"
 source = { virtual = "." }
 dependencies = [
     { name = "numba" },

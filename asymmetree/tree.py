@@ -1890,6 +1890,26 @@ class AsymmeTree:
         return left_mask, right_mask
 
     def _custom_split(self, feature, operator, values, X, y, weights):
+        """Create a custom split condition and calculate its metrics.
+
+        Evaluates a user-defined split condition by applying it to the data
+        and calculating all relevant performance metrics including precision,
+        recall, F-score, information gain, and information value.
+
+        Args:
+            feature (str): Feature name for the split condition.
+            operator (str): Comparison operator (e.g., '>=', '<', 'in', '=').
+            values: Value(s) to compare against in the split condition.
+            X (pd.DataFrame): Feature matrix.
+            y (pd.Series): Target variable.
+            weights (pd.Series): Sample weights.
+
+        Returns:
+            dict: Dictionary containing split information and calculated metrics.
+
+        Raises:
+            ValueError: If split condition is invalid or results in no positives.
+        """
         try:
             mask = self._split_to_mask(X, feature, operator, values)
         except:
@@ -1926,6 +1946,19 @@ class AsymmeTree:
         return split_info
 
     def _predict_mask(self, X, node):
+        """Generate prediction mask for samples at a given node.
+
+        Recursively traverses the tree from the specified node to determine
+        which samples should receive positive predictions based on the tree
+        structure and split conditions.
+
+        Args:
+            X (pd.DataFrame): Feature matrix to generate predictions for.
+            node (Node): Node to start prediction from.
+
+        Returns:
+            pd.Series: Boolean mask indicating positive predictions.
+        """
         if (
             node.is_leaf or not isinstance(node.children, list)
         ) and node.prediction == 0:
@@ -1946,6 +1979,17 @@ class AsymmeTree:
         return pred_mask & child_mask
 
     def _value_to_sql(self, value):
+        """Convert a Python value to its SQL string representation.
+
+        Handles various data types including strings, numbers, lists, and null values,
+        formatting them appropriately for SQL WHERE clauses.
+
+        Args:
+            value: Python value to convert to SQL format.
+
+        Returns:
+            str: SQL-formatted string representation of the value.
+        """
         if isinstance(value, str):
             sql_value = f"'{value}'"
         elif value is None or value == np.nan or value == "":
@@ -1959,9 +2003,31 @@ class AsymmeTree:
         return sql_value
 
     def _node_to_sql(self, node):
+        """Convert a node's split condition to SQL WHERE clause format.
+
+        Args:
+            node (Node): Node containing split condition information.
+
+        Returns:
+            str: SQL WHERE clause representing the node's split condition.
+        """
         return f"{node.split_feature} {node.operator} {self._value_to_sql(node.split_values)}"
 
     def _parse_partial_sql(self, sql):
+        """Parse a partial SQL condition string to extract operator and values.
+
+        Parses SQL-style conditions that contain only operator and values
+        (without feature name), commonly used in interactive mode.
+
+        Args:
+            sql (str): Partial SQL condition string (e.g., '>=100', 'in (1,2,3)').
+
+        Returns:
+            tuple: (operator, values) extracted from the SQL string.
+
+        Raises:
+            ValueError: If the SQL condition format is invalid.
+        """
         sql = sql.strip()
         pattern = r"(<>|!=|\bnot\s+in\b|\bin\b|[<>=]=?)\s*(.+)"
         match = re.search(pattern, sql, re.IGNORECASE)
@@ -1976,6 +2042,20 @@ class AsymmeTree:
             raise ValueError("Invalid SQL condition.")
 
     def _parse_sql(self, sql):
+        """Parse a complete SQL condition string to extract feature, operator, and values.
+
+        Parses full SQL WHERE clause conditions containing feature name,
+        operator, and values.
+
+        Args:
+            sql (str): Complete SQL condition string (e.g., 'age >= 25', 'city in ("NYC", "LA")').
+
+        Returns:
+            tuple: (feature, operator, values) extracted from the SQL string.
+
+        Raises:
+            ValueError: If the SQL condition format is invalid.
+        """
         sql = sql.strip()
         pattern = r"(\S+?)\s*(<>|!=|\bnot\s+in\b|\bin\b|[<>=]=?)\s*(.+)"
         match = re.search(pattern, sql, re.IGNORECASE)
@@ -1991,11 +2071,36 @@ class AsymmeTree:
             raise ValueError("Invalid SQL condition.")
 
     def _split_to_mask(self, X, feature, operator, values):
+        """Convert split condition to boolean mask for data filtering.
+
+        Applies the split condition (feature, operator, values) to the data
+        and returns a boolean mask indicating which samples satisfy the condition.
+
+        Args:
+            X (pd.DataFrame): Feature matrix.
+            feature (str): Feature name for the condition.
+            operator (str): Comparison operator.
+            values: Value(s) to compare against.
+
+        Returns:
+            pd.Series or bool: Boolean mask or False if operator not supported.
+        """
         if operator in operator_map:
             return operator_map[operator](X[feature], values)
         return False
 
     def _reverse_operator(self, operator):
+        """Get the logical opposite of a comparison operator.
+
+        Returns the inverse operator for creating complementary split conditions
+        in child nodes.
+
+        Args:
+            operator (str): Original comparison operator.
+
+        Returns:
+            str: Reversed/opposite operator.
+        """
         if operator in operator_reverse_map:
             return operator_reverse_map[operator]
         return f"not {operator}"
@@ -2010,6 +2115,20 @@ class AsymmeTree:
         extra_metrics_data,
         split_name="Split",
     ):
+        """Print detailed performance metrics for a split condition.
+
+        Displays comprehensive metrics including information gain, precision,
+        recall, F-score, and any additional custom metrics for a given split.
+
+        Args:
+            split_info (dict): Dictionary containing split condition and metrics.
+            X (pd.DataFrame): Feature matrix.
+            y (pd.Series): Target variable.
+            weights (pd.Series): Sample weights.
+            extra_metrics (dict, optional): Additional custom metrics to calculate.
+            extra_metrics_data (pd.DataFrame, optional): Data for extra metrics.
+            split_name (str): Name/label for the split in the output. Defaults to "Split".
+        """
         feature = split_info["feature"]
         operator = split_info["operator"]
         values = split_info["split_values"]

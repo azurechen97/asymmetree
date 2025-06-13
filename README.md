@@ -18,13 +18,13 @@ AsymmeTree is an interactive decision tree classifier specifically designed for 
 
 ```bash
 # Clone the repository
-git clone https://github.com/azurechen97/AsymmeTree.git
-cd AsymmeTree
+git clone https://github.com/azurechen97/asymmetree.git
+cd asymmetree
 
 # Install dependencies
 pip install -r requirements.txt
 
-# Install AsymmeTree
+# Install asymmetree
 pip install -e .
 ```
 
@@ -258,7 +258,7 @@ If you use AsymmeTree in your research, please cite:
 @software{asymmetree,
   author = {Aoxue Chen},
   title = {AsymmeTree: Interactive Asymmetric Decision Trees for Business-Ready Imbalanced Classification},
-  url = {https://github.com/azurechen97/AsymmeTree},
+  url = {https://github.com/azurechen97/asymmetree},
   year = {2025}
 }
 ```

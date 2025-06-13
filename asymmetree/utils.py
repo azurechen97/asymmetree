@@ -1,5 +1,5 @@
 """
-Utility functions for HandyTree decision tree operations.
+Utility functions for AsymmeTree decision tree operations.
 
 This module provides operator handling functions and mappings for split conditions,
 supporting both pandas Series and numpy arrays with polymorphic dispatch.
