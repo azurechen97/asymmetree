@@ -2186,7 +2186,7 @@ class AsymmeTree:
         Returns:
             str: String representation showing key configuration parameters.
         """
-        return f"AsymmeTree(max_depth={self.max_depth}, max_cat_unique={self.max_cat_unique}, cat_value_min_ratio={self.cat_value_min_ratio}, num_bin={self.num_bin}, node_max_precision={self.node_max_precision}, node_min_recall={self.node_min_recall}, leaf_min_precision={self.leaf_min_precision}, feature_shown_num={self.feature_shown_num}, condition_shown_num={self.condition_shown_num}, sorted_by={self.sorted_by}, ignore_null={self.ignore_null}, show_metrics={self.show_metrics}, verbose={self.verbose})"
+        return f"AsymmeTree(max_depth={self.max_depth}, max_cat_unique={self.max_cat_unique}, cat_value_min_recall={self.cat_value_min_recall}, num_bin={self.num_bin}, node_max_precision={self.node_max_precision}, node_min_recall={self.node_min_recall}, leaf_min_precision={self.leaf_min_precision}, feature_shown_num={self.feature_shown_num}, condition_shown_num={self.condition_shown_num}, sorted_by={self.sorted_by}, pos_weight={self.pos_weight}, beta={self.beta}, knot={self.knot}, factor={self.factor}, ignore_null={self.ignore_null}, show_metrics={self.show_metrics}, verbose={self.verbose})"
 
 
 class ExitSplit(Exception):

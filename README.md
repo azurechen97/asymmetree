@@ -86,6 +86,7 @@ tree.quick_split(id=4, sql="age >= 25", overwrite=True)
 tree = AsymmeTree(
     max_depth=7,
     max_cat_unique=20,
+    cat_value_min_recall=0.005,  # Minimum recall for categorical values
     sorted_by='f_score',
     node_max_precision=0.3,
     node_min_recall=0.05,
@@ -93,6 +94,9 @@ tree = AsymmeTree(
     lt_only_features=['age'],  # Age can only use < operator
     gt_only_features=['income'],  # Income can only use > operator
     pinned_features=['risk_score'],  # Prioritize this feature
+    beta=1,  # F-beta score parameter
+    knot=1,  # Precision scaling threshold
+    factor=1,  # Scaling factor for precision above knot
     verbose=True
 )
 ```
@@ -194,6 +198,18 @@ new_tree.load('fraud_model.json')
 
 # Export to dictionary
 tree_dict = tree.to_dict()
+
+# Toggle leaf node predictions manually
+tree.toggle_prediction(id=5)  # Toggle prediction for node 5
+
+# Relabel nodes based on thresholds
+tree.relabel(min_precision=0.2, min_recall=0.05)
+
+# Prune tree to remove redundant splits
+tree.prune()
+
+# Clear children of a specific node
+tree.clear_children(id=3)
 ```
 
 ## 🧠 Algorithm Details
@@ -221,20 +237,64 @@ tree_dict = tree.to_dict()
 
 ### Key Methods
 
+#### Model Training
 - `fit(X, y, auto=False)`: Train the model
-- `predict(X)`: Generate predictions
+- `import_data(X, y, ...)`: Import training data with configuration
+- `continue_fit(id, auto=False)`: Continue building from specific node
+
+#### Interactive Splitting
 - `split(id, auto=False)`: Interactive node splitting
+- `quick_split(id, sql, overwrite=False)`: Quick split with SQL condition
+
+#### Prediction and Evaluation
+- `predict(X)`: Generate predictions
 - `performance()`: Display model metrics
+- `metrics()`: Return metrics dictionary
+
+#### Tree Manipulation
+- `toggle_prediction(id)`: Toggle leaf node prediction
+- `relabel(min_precision, min_recall)`: Relabel nodes based on thresholds
+- `prune()`: Remove redundant splits
+- `clear_children(id)`: Remove all children of a node
+
+#### Model Export/Import
 - `to_sql()`: Export as SQL WHERE clause
+- `to_dict()`: Export as dictionary
+- `to_json()`: Export as JSON string
+- `save(file_path)`: Save model to file
+- `load(file_path)`: Load model from file
+- `from_dict(nodes)`: Load from dictionary
+- `from_json(json_str)`: Load from JSON string
+
+#### Visualization
+- `print(show_metrics=False)`: Display tree structure
 
 ### Configuration Parameters
 
-- `max_depth`: Maximum tree depth
-- `sorted_by`: Split criterion ('f_score', 'ig', 'igr', 'iv')
-- `node_min_recall`: Minimum recall threshold for nodes
-- `leaf_min_precision`: Minimum precision for positive leaf prediction
-- `cat_features`: List of categorical feature names
-- `feature_shown_num`: Number of features shown in interactive mode
+- `max_depth` (int): Maximum tree depth (default: 5)
+- `max_cat_unique` (int): Maximum unique values for categorical features (default: 50)
+- `cat_value_min_recall` (float): Minimum recall threshold for categorical values (default: 0.005)
+- `num_bin` (int): Number of bins for numerical discretization (default: 25)
+- `node_max_precision` (float): Maximum precision threshold for splitting (default: 0.3)
+- `node_min_recall` (float): Minimum recall threshold for nodes (default: 0.05)
+- `leaf_min_precision` (float): Minimum precision for positive leaf prediction (default: 0.15)
+- `feature_shown_num` (int): Number of features shown in interactive mode (default: 5)
+- `condition_shown_num` (int): Number of conditions shown in interactive mode (default: 5)
+- `sorted_by` (str): Split criterion - 'f_score', 'ig', 'igr', 'iv' (default: 'f_score')
+- `pos_weight` (float): Weight for positive class in calculations (default: 1)
+- `beta` (float): Beta parameter for F-beta score (default: 1)
+- `knot` (float): Threshold for precision scaling (default: 1)
+- `factor` (float): Scaling factor for precision above knot (default: 1)
+- `ignore_null` (bool): Whether to ignore null values (default: True)
+- `show_metrics` (bool): Whether to show metrics in tree display (default: False)
+- `verbose` (bool): Whether to print verbose output (default: False)
+
+### Feature Constraints
+
+- `cat_features` (list): Categorical feature names
+- `lt_only_features` (list): Features restricted to '<' operators  
+- `gt_only_features` (list): Features restricted to '>' operators
+- `pinned_features` (list): Features to prioritize in splitting
 
 ## 🤝 Contributing
 
@@ -266,4 +326,4 @@ If you use AsymmeTree in your research, please cite:
 ## 🏆 Acknowledgments
 
 - Thanks to the scikit-learn team for inspiration
-- Built with NumPy, Pandas, and Numba for performance
+- Built with NumPy, Pandas, and optimized for performance
