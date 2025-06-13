@@ -360,7 +360,7 @@ class HandyTree:
                 )
             else:
                 feature, operator, values = self._parse_partial_sql(sql)
-                _, _ = self._split_node_by_sql(
+                _, _ = self._quick_split_node(
                     feature,
                     operator,
                     values,
@@ -548,8 +548,8 @@ class HandyTree:
             min_recall = self.node_min_recall
         for id in self.node_dict:
             node = self.node_dict[id]
-            precision = node.metrics["precision"]
-            recall = node.metrics["recall"]
+            precision = node.metrics["Precision"]
+            recall = node.metrics["Recall"]
             if node.is_leaf:
                 node.prediction = (
                     1 if precision >= min_precision and recall >= min_recall else 0
@@ -1017,7 +1017,129 @@ class HandyTree:
         auto,
         node,
     ):
-        pass
+        self.print(self.tree, node, self.show_metrics)
+
+        precision = node.metrics["Precision"]
+        recall = node.metrics["Recall"]
+        pos_amt = node.metrics["Positives"]
+
+        def print_exit_message():
+            metrics_str = f"Precision: {precision:.2%}, Recall: {recall:.2%}, Positives: {pos_amt:.2f}"
+            if extra_metrics is not None and isinstance(
+                extra_metrics_data, pd.DataFrame
+            ):
+                for metric in extra_metrics:
+                    metrics_str += f", {metric}: {extra_metrics[metric](extra_metrics_data):.4f}".rstrip(
+                        "0"
+                    ).rstrip(
+                        "."
+                    )
+            print(metrics_str)
+
+        if (
+            node.operator in (">=", ">") and node.split_feature in lt_only_features
+        ) or (node.operator in ("<=", "<") and node.split_feature in gt_only_features):
+            print(
+                "Cannot split due to lt_only_features or gt_only_features constraints."
+            )
+            print_exit_message()
+            return
+
+        if node.depth >= self.max_depth:
+            print(f"Reached max depth {self.max_depth}.")
+            print_exit_message()
+            return
+
+        if precision > self.node_max_precision:
+            print(
+                f"Precision {precision:.2%} reached satisfactory level {self.node_max_precision:.2%}."
+            )
+            print_exit_message()
+            return
+
+        try:
+            left_mask, right_mask = self._split_node(
+                X,
+                y,
+                weights,
+                cat_features,
+                lt_only_features,
+                gt_only_features,
+                pinned_features,
+                extra_metrics,
+                extra_metrics_data,
+                auto,
+                node,
+            )
+        except ExitSplit as e:
+            print(str(e))
+            if str(e) == "Exit by user.":
+                print("Continue to next node.")
+            print_exit_message()
+            return
+
+        if isinstance(node.children, list) and len(node.children) >= 2:
+            left_node = node.children[0]
+            right_node = node.children[1]
+            print(f"\nFinding split for node {left_node.id}:")
+            if isinstance(extra_metrics_data, pd.DataFrame):
+                self._build_tree(
+                    X[left_mask],
+                    y[left_mask],
+                    weights[left_mask],
+                    cat_features,
+                    lt_only_features,
+                    gt_only_features,
+                    pinned_features,
+                    extra_metrics,
+                    extra_metrics_data[left_mask],
+                    auto,
+                    left_node,
+                )
+            else:
+                self._build_tree(
+                    X[left_mask],
+                    y[left_mask],
+                    weights[left_mask],
+                    cat_features,
+                    lt_only_features,
+                    gt_only_features,
+                    pinned_features,
+                    None,
+                    None,
+                    auto,
+                    left_node,
+                )
+
+            print(f"\nFinding split for node {right_node.id}:")
+            if isinstance(extra_metrics_data, pd.DataFrame):
+                self._build_tree(
+                    X[right_mask],
+                    y[right_mask],
+                    weights[right_mask],
+                    cat_features,
+                    lt_only_features,
+                    gt_only_features,
+                    pinned_features,
+                    extra_metrics,
+                    extra_metrics_data[right_mask],
+                    auto,
+                    right_node,
+                )
+            else:
+                self._build_tree(
+                    X[right_mask],
+                    y[right_mask],
+                    weights[right_mask],
+                    cat_features,
+                    lt_only_features,
+                    gt_only_features,
+                    pinned_features,
+                    None,
+                    None,
+                    auto,
+                    right_node,
+                )
 
     def _split_node(
         self,
@@ -1033,9 +1155,237 @@ class HandyTree:
         auto,
         node,
     ):
-        pass
+        recall = node.metrics["Recall"]
 
-    def _split_node_by_sql(
+        if len(y) == 0 or np.sum(y) == 0:
+            raise ExitSplit("No positives in the node.")
+
+        if recall < self.node_min_recall:
+            raise ExitSplit(f"Node recall {recall:.2%} is too low.")
+
+        if len(y) == np.sum(y):
+            raise ExitSplit("All samples are positives.")
+
+        splits = self._best_splits(
+            X, y, weights, cat_features, lt_only_features, gt_only_features
+        )
+
+        if splits is None or len(splits) == 0:
+            raise ExitSplit("No valid splits found.")
+
+        top_features = sorted(
+            list(splits.items()),
+            key=lambda x: x[1][0]["metrics"][self.sorted_by],
+            reverse=True,
+        )
+        ranked_start_idx = 0
+        if len(pinned_features) > 0:
+            pinned_feature_splits = [
+                (feature, split)
+                for feature, split in top_features
+                if feature in pinned_features
+            ]
+            top_features = pinned_feature_splits + top_features
+            ranked_start_idx = len(pinned_feature_splits)
+
+        print(f"\nCurrent depth: {node.depth}")
+
+        def input_feature():
+            feature_max_idx = self.feature_shown_num
+            chosen_feature = None
+            while True:
+                chosen_feature = input(
+                    f"\nSelect a feature by displayed rank number (default {ranked_start_idx}) or feature name (case sensitive).\nCommands:\n  /m: More options\n  /q: Quit\n>> "
+                )
+                if chosen_feature == "/q":
+                    break
+                elif chosen_feature == "/m":
+                    print()
+                    if feature_max_idx > len(top_features):
+                        print(f"Only {len(top_features)} features are available.")
+                    else:
+                        for i, split in enumerate(
+                            top_features[
+                                feature_max_idx : feature_max_idx
+                                + self.feature_shown_num
+                            ]
+                        ):
+                            if feature_max_idx + i == ranked_start_idx:
+                                print(f"\nBest features and split values:")
+                                feature, splits_info = split
+                                print(f"{feature_max_idx + i}. {feature}")
+                                split_info = splits_info[0]
+                                self._print_metrics(
+                                    split_info,
+                                    X,
+                                    y,
+                                    weights,
+                                    extra_metrics,
+                                    extra_metrics_data,
+                                    "Best Split",
+                                )
+                                feature_max_idx += self.feature_shown_num
+                elif chosen_feature == "":
+                    chosen_feature = top_features[ranked_start_idx][0]
+                    break
+                elif chosen_feature.isdigit() and int(chosen_feature) < len(
+                    top_features
+                ):
+                    chosen_feature = top_features[int(chosen_feature)][0]
+                    break
+                elif chosen_feature not in top_features:
+                    print(f"Invalid feature name. Please try again.")
+                elif chosen_feature not in splits:
+                    print(f"No split found for feature {chosen_feature}.")
+                else:
+                    break
+            return chosen_feature
+
+        def input_condition(chosen_feature):
+            split_max_idx = self.condition_shown_num
+            split_info = None
+            while True:
+                chosen_split = input(
+                    f"\nSelect a split condition by displayed rank number (default 0) or a SQL-style condition (e.g. >=100).\nCommands:\n  /m: More options\n  /b Back to feature selection\n  /q: Quit\n>> "
+                )
+                if chosen_split == "/q" or chosen_split == "/b":
+                    split_info = chosen_split
+                    break
+                elif chosen_split == "/m":
+                    print()
+                    if split_max_idx > len(splits[chosen_feature]):
+                        print(
+                            f"Only {len(splits[chosen_feature])} splits are available."
+                        )
+                    else:
+                        for j, split_info in enumerate(
+                            splits[chosen_feature][
+                                split_max_idx : split_max_idx + self.condition_shown_num
+                            ]
+                        ):
+                            self._print_metrics(
+                                split_info,
+                                X,
+                                y,
+                                weights,
+                                extra_metrics,
+                                extra_metrics_data,
+                                f"Split {split_max_idx + j}",
+                            )
+                            split_max_idx += self.condition_shown_num
+                elif chosen_split == "":
+                    split_info = splits[chosen_feature][0]
+                    break
+                elif chosen_split.isdigit():
+                    try:
+                        chosen_split = int(chosen_split)
+                        split_info = splits[chosen_feature][chosen_split]
+                        break
+                    except:
+                        print(f"Invalid split index. Please try again.")
+                else:
+                    try:
+                        while True:
+                            custom_operator, custom_value = self._parse_partial_sql(
+                                chosen_split
+                            )
+                            split_info = self._custom_split(
+                                chosen_feature,
+                                custom_operator,
+                                custom_value,
+                                X,
+                                y,
+                                weights,
+                            )
+                            print("\nDetected custom split condition.")
+                            self._print_metrics(
+                                split_info,
+                                X,
+                                y,
+                                weights,
+                                extra_metrics,
+                                extra_metrics_data,
+                                "Custom Split",
+                            )
+                            satisfied = input(
+                                f"\nIf satisfied, press Enter. Otherwise, enter another condition.\n>> "
+                            )
+                            if satisfied == "":
+                                break
+                            else:
+                                chosen_split = satisfied
+                        break
+                    except:
+                        print(f"Invalid SQL condition. Please try again.")
+            return split_info
+
+        if auto:
+            chosen_feature, split_info = top_features[ranked_start_idx]
+            split_info = split_info[0]
+            print(f"\nAuto-selected feature {chosen_feature}.")
+            self._print_metrics(
+                split_info,
+                X,
+                y,
+                weights,
+                extra_metrics,
+                extra_metrics_data,
+                "Auto-selected Split",
+            )
+        else:
+            if ranked_start_idx >= 0:
+                print("Pinned features and split values:")
+            for i, split in enumerate(top_features[: self.feature_shown_num]):
+                if i == ranked_start_idx:
+                    print(f"\nBest features and split values:")
+                feature, splits_info = split
+                print(f"{i}. {feature}")
+                split_info = splits_info[0]
+                self._print_metrics(
+                    split_info,
+                    X,
+                    y,
+                    weights,
+                    extra_metrics,
+                    extra_metrics_data,
+                    "Best Split",
+                )
+
+        split_info = None
+        while not isinstance(split_info, dict):
+            chosen_feature = input_feature()
+            if chosen_feature == "/q":
+                raise ExitSplit("Exit by user.")
+
+            print(f"\nFeature {chosen_feature} is selected. Top splits:")
+            for j, split_info in enumerate(
+                splits[chosen_feature][: self.condition_shown_num]
+            ):
+                self._print_metrics(
+                    split_info,
+                    X,
+                    y,
+                    weights,
+                    extra_metrics,
+                    extra_metrics_data,
+                    f"Split {j}",
+                )
+            split_info = input_condition(chosen_feature)
+            if split_info == "/q":
+                raise ExitSplit("Exit by user.")
+
+        left_mask, right_mask = self._create_children(
+            chosen_feature,
+            split_info["operator"],
+            split_info["split_values"],
+            X,
+            y,
+            weights,
+            node,
+        )
+        return left_mask, right_mask
+
+    def _quick_split_node(
         self,
         feature,
         operator,
@@ -1047,10 +1397,108 @@ class HandyTree:
         extra_metrics_data,
         node,
     ):
-        pass
+        recall = node.metrics["Recall"]
+
+        if len(y) == 0 or np.sum(y) == 0:
+            raise ExitSplit("No positives in the node.")
+
+        if recall < self.node_min_recall:
+            raise ExitSplit(f"Node recall {recall:.2%} is too low.")
+
+        if len(y) == np.sum(y):
+            raise ExitSplit("All samples are positives.")
+
+        split_info = self._custom_split(feature, operator, values, X, y, weights)
+
+        self._print_metrics(
+            split_info, X, y, weights, extra_metrics, extra_metrics_data, "Custom Split"
+        )
+
+        left_mask, right_mask = self._create_children(
+            feature, operator, values, X, y, weights, node
+        )
+        return left_mask, right_mask
 
     def _create_children(self, feature, operator, values, X, y, weights, node):
-        pass
+        node.is_leaf = False
+        node.children = []
+
+        left_mask = self._split_to_mask(X, feature, operator, values)
+        left_node = Node(
+            index=X[left_mask].index,
+            parent=node,
+            split_feature=feature,
+            operator=operator,
+            split_values=values,
+            is_leaf=True,
+            depth=node.depth + 1,
+            id=node.id * 2,
+        )
+        left_precision = get_precision(
+            np.ones(len(y[left_mask]), dtype="float64"),
+            y[left_mask],
+            weights[left_mask],
+        )
+        left_recall = get_recall(
+            np.ones(len(y[left_mask]), dtype="float64"),
+            y[left_mask],
+            weights[left_mask],
+            self.total_pos,
+        )
+        left_node.metrics = {
+            "Precision": left_precision,
+            "Recall": left_recall,
+            "Positives": np.sum(y[left_mask] * weights[left_mask]),
+        }
+        left_node.prediction = 1
+
+        self.node_dict[left_node.id] = left_node
+        self.node_counter = len(self.node_dict)
+        node.children.append(left_node)
+        right_mask = ~left_mask
+        na_cnt = 0
+        if self.ignore_null:
+            na_cnt = (right_mask & X[feature].isna()).sum()
+            if na_cnt > 0:
+                right_mask = right_mask & X[feature].notna()
+        right_node = Node(
+            index=X[right_mask].index,
+            parent=node,
+            split_feature=feature,
+            operator=self._reverse_operator(operator),
+            split_values=values,
+            is_leaf=True,
+            depth=node.depth + 1,
+            id=node.id * 2 + 1,
+        )
+        right_precision = get_precision(
+            np.ones(len(y[right_mask]), dtype="float64"),
+            y[right_mask],
+            weights[right_mask],
+        )
+        right_recall = get_recall(
+            np.ones(len(y[right_mask]), dtype="float64"),
+            y[right_mask],
+            weights[right_mask],
+            self.total_pos,
+        )
+        right_node.metrics = {
+            "Precision": right_precision,
+            "Recall": right_recall,
+            "Positives": np.sum(y[right_mask] * weights[right_mask]),
+        }
+        right_node.prediction = 0
+        self.node_dict[right_node.id] = right_node
+        self.node_counter = len(self.node_dict)
+        node.children.append(right_node)
+
+        print(
+            f"\nChild nodes created: {left_node.id} (positive) and {right_node.id} (negative)"
+        )
+        if na_cnt > 0:
+            print(f"Omitted {na_cnt} rows with null values in Node {right_node.id}.")
+
+        return left_mask, right_mask
 
     def _custom_split(self, feature, operator, values, X, y, weights):
         pass
