@@ -22,7 +22,7 @@ class Node:
         children: List of child nodes (None for leaf nodes).
         split_feature: Feature name used for splitting at this node.
         operator: Comparison operator used for the split condition.
-        split_values: Values used in the split condition.
+        split_value: Value used in the split condition.
         is_leaf: Whether this node is a leaf node.
         prediction: Prediction value (0 or 1) for leaf nodes.
         metrics: Dictionary containing node performance metrics.
@@ -37,7 +37,7 @@ class Node:
         children=None,
         split_feature=None,
         operator=None,
-        split_values=None,
+        split_value=None,
         is_leaf=True,
         prediction=None,
         metrics=None,
@@ -52,7 +52,7 @@ class Node:
             children: List of child nodes.
             split_feature: Feature name used for splitting.
             operator: Comparison operator for split condition.
-            split_values: Values used in split condition.
+            split_value: Value used in split condition.
             is_leaf: Whether this is a leaf node. Defaults to True.
             prediction: Prediction value for leaf nodes.
             metrics: Performance metrics dictionary.
@@ -64,7 +64,7 @@ class Node:
         self.children = children
         self.split_feature = split_feature
         self.operator = operator
-        self.split_values = split_values
+        self.split_value = split_value
         self.is_leaf = is_leaf
         self.prediction = prediction
         self.metrics = metrics
@@ -73,7 +73,7 @@ class Node:
 
     def __repr__(self):
         """Return string representation of the node."""
-        return f"Node(id={self.id}, depth={self.depth}, is_leaf={self.is_leaf}, split_feature={self.split_feature}, operator={self.operator}, split_values={self.split_values}, prediction={self.prediction}, metrics={self.metrics})"
+        return f"Node(id={self.id}, depth={self.depth}, is_leaf={self.is_leaf}, split_feature={self.split_feature}, operator={self.operator}, split_value={self.split_value}, prediction={self.prediction}, metrics={self.metrics})"
 
     def __str__(self):
         """Return string representation of the node."""
@@ -86,7 +86,7 @@ class Node:
             dict: Dictionary containing node attributes with parent/children as IDs.
         """
         d = self.__dict__.copy()
-        del d["indices"]
+        del d["index"]
         del d["metrics"]
 
         d["parent"] = self.parent.id if isinstance(self.parent, Node) else None
@@ -352,7 +352,7 @@ class AsymmeTree:
                 self.X,
                 left_child.split_feature,
                 left_child.operator,
-                left_child.split_values,
+                left_child.split_value,
             )
             self.reset_tree_data(node=left_child, mask=left_mask & mask)
             self.reset_tree_data(node=right_child, mask=(~left_mask) & mask)
@@ -509,11 +509,11 @@ class AsymmeTree:
                     node,
                 )
             else:
-                feature, operator, values = self._parse_partial_sql(sql)
+                feature, operator, value = self._parse_partial_sql(sql)
                 _, _ = self._quick_split_node(
                     feature,
                     operator,
-                    values,
+                    value,
                     X,
                     y,
                     weights,
@@ -1198,22 +1198,22 @@ class AsymmeTree:
                     if len(split) > num_unique // 2:
                         not_split = [c for c in categories if c not in split]
                         if len(not_split) == 1:
-                            split_values = not_split[0]
+                            split_value = not_split[0]
                             operator = "<>"
                         else:
-                            split_values = not_split.copy()
+                            split_value = not_split.copy()
                             operator = "not in"
                     else:
                         if len(split) == 1:
-                            split_values = split[0]
+                            split_value = split[0]
                             operator = "="
                         else:
-                            split_values = split.copy()
+                            split_value = split.copy()
                             operator = "in"
                     split_info = {
                         "feature": feature,
                         "operator": operator,
-                        "split_values": split_values,
+                        "split_value": split_value,
                         "metrics": {
                             "precision": precision,
                             "recall": recall,
@@ -1288,7 +1288,7 @@ class AsymmeTree:
                         split_info = {
                             "feature": feature,
                             "operator": operator,
-                            "split_values": threshold,
+                            "split_value": threshold,
                             "metrics": {
                                 "precision": precision,
                                 "recall": recall,
@@ -1733,7 +1733,7 @@ class AsymmeTree:
         left_mask, right_mask = self._create_children(
             chosen_feature,
             split_info["operator"],
-            split_info["split_values"],
+            split_info["split_value"],
             X,
             y,
             weights,
@@ -1745,7 +1745,7 @@ class AsymmeTree:
         self,
         feature,
         operator,
-        values,
+        value,
         X,
         y,
         weights,
@@ -1758,7 +1758,7 @@ class AsymmeTree:
         Args:
             feature (str): Feature name for splitting.
             operator (str): Comparison operator.
-            values: Split values.
+            value: Split value.
             X (pd.DataFrame): Feature matrix.
             y (pd.Series): Target variable.
             weights (pd.Series): Sample weights.
@@ -1780,18 +1780,18 @@ class AsymmeTree:
         if len(y) == np.sum(y):
             raise ExitSplit("All samples are positives.")
 
-        split_info = self._custom_split(feature, operator, values, X, y, weights)
+        split_info = self._custom_split(feature, operator, value, X, y, weights)
 
         self._print_metrics(
             split_info, X, y, weights, extra_metrics, extra_metrics_data, "Custom Split"
         )
 
         left_mask, right_mask = self._create_children(
-            feature, operator, values, X, y, weights, node
+            feature, operator, value, X, y, weights, node
         )
         return left_mask, right_mask
 
-    def _create_children(self, feature, operator, values, X, y, weights, node):
+    def _create_children(self, feature, operator, value, X, y, weights, node):
         """Create child nodes after splitting.
 
         Creates left and right child nodes, calculates their metrics,
@@ -1800,7 +1800,7 @@ class AsymmeTree:
         Args:
             feature (str): Feature used for splitting.
             operator (str): Comparison operator.
-            values: Split values.
+            value: Split value.
             X (pd.DataFrame): Feature matrix.
             y (pd.Series): Target variable.
             weights (pd.Series): Sample weights.
@@ -1812,13 +1812,13 @@ class AsymmeTree:
         node.is_leaf = False
         node.children = []
 
-        left_mask = self._split_to_mask(X, feature, operator, values)
+        left_mask = self._split_to_mask(X, feature, operator, value)
         left_node = Node(
             index=X[left_mask].index,
             parent=node,
             split_feature=feature,
             operator=operator,
-            split_values=values,
+            split_value=value,
             is_leaf=True,
             depth=node.depth + 1,
             id=node.id * 2,
@@ -1855,7 +1855,7 @@ class AsymmeTree:
             parent=node,
             split_feature=feature,
             operator=self._reverse_operator(operator),
-            split_values=values,
+            split_value=value,
             is_leaf=True,
             depth=node.depth + 1,
             id=node.id * 2 + 1,
@@ -1889,7 +1889,7 @@ class AsymmeTree:
 
         return left_mask, right_mask
 
-    def _custom_split(self, feature, operator, values, X, y, weights):
+    def _custom_split(self, feature, operator, value, X, y, weights):
         """Create a custom split condition and calculate its metrics.
 
         Evaluates a user-defined split condition by applying it to the data
@@ -1899,7 +1899,7 @@ class AsymmeTree:
         Args:
             feature (str): Feature name for the split condition.
             operator (str): Comparison operator (e.g., '>=', '<', 'in', '=').
-            values: Value(s) to compare against in the split condition.
+            value: Value(s) to compare against in the split condition.
             X (pd.DataFrame): Feature matrix.
             y (pd.Series): Target variable.
             weights (pd.Series): Sample weights.
@@ -1911,7 +1911,7 @@ class AsymmeTree:
             ValueError: If split condition is invalid or results in no positives.
         """
         try:
-            mask = self._split_to_mask(X, feature, operator, values)
+            mask = self._split_to_mask(X, feature, operator, value)
         except:
             raise ValueError("Invalid split condition.")
         if mask.sum() == 0 or (weights[mask] * y[mask]).sum() == 0:
@@ -1931,7 +1931,7 @@ class AsymmeTree:
         split_info = {
             "feature": feature,
             "operator": operator,
-            "split_values": values,
+            "split_value": value,
             "metrics": {
                 "precision": precision,
                 "recall": recall,
@@ -1967,7 +1967,7 @@ class AsymmeTree:
             pred_mask = pd.Series(True, index=X.index)
         else:
             pred_mask = self._split_to_mask(
-                X, node.split_feature, node.operator, node.split_values
+                X, node.split_feature, node.operator, node.split_value
             )
 
         if node.is_leaf or not isinstance(node.children, list):
@@ -2011,7 +2011,7 @@ class AsymmeTree:
         Returns:
             str: SQL WHERE clause representing the node's split condition.
         """
-        return f"{node.split_feature} {node.operator} {self._value_to_sql(node.split_values)}"
+        return f"{node.split_feature} {node.operator} {self._value_to_sql(node.split_value)}"
 
     def _parse_partial_sql(self, sql):
         """Parse a partial SQL condition string to extract operator and values.
@@ -2070,23 +2070,23 @@ class AsymmeTree:
         except:
             raise ValueError("Invalid SQL condition.")
 
-    def _split_to_mask(self, X, feature, operator, values):
+    def _split_to_mask(self, X, feature, operator, value):
         """Convert split condition to boolean mask for data filtering.
 
-        Applies the split condition (feature, operator, values) to the data
+        Applies the split condition (feature, operator, value) to the data
         and returns a boolean mask indicating which samples satisfy the condition.
 
         Args:
             X (pd.DataFrame): Feature matrix.
             feature (str): Feature name for the condition.
             operator (str): Comparison operator.
-            values: Value(s) to compare against.
+            value: Value(s) to compare against.
 
         Returns:
             pd.Series or bool: Boolean mask or False if operator not supported.
         """
         if operator in operator_map:
-            return operator_map[operator](X[feature], values)
+            return operator_map[operator](X[feature], value)
         return False
 
     def _reverse_operator(self, operator):
@@ -2131,7 +2131,7 @@ class AsymmeTree:
         """
         feature = split_info["feature"]
         operator = split_info["operator"]
-        values = split_info["split_values"]
+        value = split_info["split_value"]
         metrics = split_info["metrics"]
         precision = metrics["precision"]
         recall = metrics["recall"]
@@ -2142,7 +2142,7 @@ class AsymmeTree:
         pos_amt = metrics["pos_amt"]
         total_recall = metrics["total_recall"]
 
-        mask = self._split_to_mask(X, feature, operator, values)
+        mask = self._split_to_mask(X, feature, operator, value)
         subsets = [mask, ~mask]
         y_pred = np.where(mask, 1, 0)
 
@@ -2163,7 +2163,7 @@ class AsymmeTree:
         if total_recall is None:
             total_recall = pos_amt / self.total_pos
 
-        print(f"  {split_name}: {operator} {self._value_to_sql(values)}")
+        print(f"  {split_name}: {operator} {self._value_to_sql(value)}")
         print(f"    IG: {ig:.4g}, IGR: {igr:.4g}, IV: {iv:.4g}")
         print(
             f"    Precision: {precision:.2%}, Node Recall: {recall:.2%}, F-score: {f_score:.4g}"
