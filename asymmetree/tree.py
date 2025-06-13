@@ -145,6 +145,9 @@ class AsymmeTree:
         condition_shown_num=5,
         sorted_by="f_score",
         pos_weight=1,
+        beta=1,
+        knot=1,
+        factor=1,
         ignore_null=True,
         show_metrics=False,
         verbose=False,
@@ -163,6 +166,9 @@ class AsymmeTree:
             condition_shown_num (int): Number of conditions to show in interactive mode. Defaults to 5.
             sorted_by (str): Metric to sort splits by ('f_score', 'ig', 'igr', 'iv'). Defaults to 'f_score'.
             pos_weight (float): Weight for positive class in calculations. Defaults to 1.
+            beta (float): Beta parameter for F-beta score. Defaults to 1 (F1-score).
+            knot (float): Threshold for precision scaling. Defaults to 1.
+            factor (float): Scaling factor for precision above knot. Defaults to 1.
             ignore_null (bool): Whether to ignore null values. Defaults to True.
             show_metrics (bool): Whether to show metrics in tree display. Defaults to False.
             verbose (bool): Whether to print verbose output. Defaults to False.
@@ -181,6 +187,9 @@ class AsymmeTree:
         self.condition_shown_num = condition_shown_num
         self.sorted_by = sorted_by
         self.pos_weight = pos_weight
+        self.beta = beta
+        self.knot = knot
+        self.factor = factor
         self.ignore_null = ignore_null
         self.show_metrics = show_metrics
         self.verbose = verbose
@@ -1881,28 +1890,115 @@ class AsymmeTree:
         return left_mask, right_mask
 
     def _custom_split(self, feature, operator, values, X, y, weights):
-        pass
+        try:
+            mask = self._split_to_mask(X, feature, operator, values)
+        except:
+            raise ValueError("Invalid split condition.")
+        if mask.sum() == 0 or (weights[mask] * y[mask]).sum() == 0:
+            raise ValueError("No positives in the subset.")
+
+        subsets = [mask, ~mask]
+        y_pred = np.where(mask, 1, 0)
+
+        pos_amt = (y * weights * y_pred).sum()
+        total_recall = pos_amt / self.total_pos
+        ig = information_gain(y, subsets, weights, self.pos_weight)
+        igr = information_gain_ratio(ig, intrinsic_information(y, subsets, weights))
+        iv = information_value(y, subsets, weights, self.pos_weight)
+        precision = pos_amt / np.sum(y_pred * weights)
+        recall = pos_amt / self.total_pos
+        f_score = get_f_score(precision, recall, self.beta, self.knot, self.factor)
+        split_info = {
+            "feature": feature,
+            "operator": operator,
+            "split_values": values,
+            "metrics": {
+                "precision": precision,
+                "recall": recall,
+                "f_score": f_score,
+                "ig": ig,
+                "igr": igr,
+                "iv": iv,
+                "pos_amt": pos_amt,
+                "total_recall": total_recall,
+            },
+        }
+        return split_info
 
     def _predict_mask(self, X, node):
-        pass
+        if (
+            node.is_leaf or not isinstance(node.children, list)
+        ) and node.prediction == 0:
+            pred_mask = pd.Series(False, index=X.index)
+        elif node is self.tree:
+            pred_mask = pd.Series(True, index=X.index)
+        else:
+            pred_mask = self._split_to_mask(
+                X, node.split_feature, node.operator, node.split_values
+            )
+
+        if node.is_leaf or not isinstance(node.children, list):
+            return pred_mask
+
+        child_mask = pd.Series(False, index=X.index)
+        for child in node.children:
+            child_mask = child_mask | self._predict_mask(X, child)
+        return pred_mask & child_mask
 
     def _value_to_sql(self, value):
-        pass
+        if isinstance(value, str):
+            sql_value = f"'{value}'"
+        elif value is None or value == np.nan or value == "":
+            sql_value = "NULL"
+        elif isinstance(value, (float, np.floating)):
+            sql_value = f"{value:.6f}".rstrip("0").rstrip(".")
+        elif isinstance(value, list):
+            sql_value = f"({', '.join([self._value_to_sql(v) for v in value])})"
+        else:
+            sql_value = str(value)
+        return sql_value
 
     def _node_to_sql(self, node):
-        pass
+        return f"{node.split_feature} {node.operator} {self._value_to_sql(node.split_values)}"
 
     def _parse_partial_sql(self, sql):
-        pass
+        sql = sql.strip()
+        pattern = r"(<>|!=|\bnot\s+in\b|\bin\b|[<>=]=?)\s*(.+)"
+        match = re.search(pattern, sql, re.IGNORECASE)
+        try:
+            operator = match.group(1).lower().strip()
+            value = match.group(2).strip()
+            value = ast.literal_eval(value)
+            if isinstance(value, tuple):
+                value = list(value)
+            return operator, value
+        except:
+            raise ValueError("Invalid SQL condition.")
 
     def _parse_sql(self, sql):
-        pass
+        sql = sql.strip()
+        pattern = r"(\S+?)\s*(<>|!=|\bnot\s+in\b|\bin\b|[<>=]=?)\s*(.+)"
+        match = re.search(pattern, sql, re.IGNORECASE)
+        try:
+            feature = match.group(1).strip()
+            operator = match.group(2).lower().strip()
+            value = match.group(3).strip()
+            value = ast.literal_eval(value)
+            if isinstance(value, tuple):
+                value = list(value)
+            return feature, operator, value
+        except:
+            raise ValueError("Invalid SQL condition.")
 
     def _split_to_mask(self, X, feature, operator, values):
-        pass
+        if operator in operator_map:
+            return operator_map[operator](X[feature], values)
+        return False
 
     def _reverse_operator(self, operator):
-        pass
+        if operator in operator_reverse_map:
+            return operator_reverse_map[operator]
+        return f"not {operator}"
 
     def _print_metrics(
         self,
@@ -1914,7 +2010,56 @@ class AsymmeTree:
         extra_metrics_data,
         split_name="Split",
     ):
-        pass
+        feature = split_info["feature"]
+        operator = split_info["operator"]
+        values = split_info["split_values"]
+        metrics = split_info["metrics"]
+        precision = metrics["precision"]
+        recall = metrics["recall"]
+        f_score = metrics["f_score"]
+        ig = metrics["ig"]
+        igr = metrics["igr"]
+        iv = metrics["iv"]
+        pos_amt = metrics["pos_amt"]
+        total_recall = metrics["total_recall"]
+
+        mask = self._split_to_mask(X, feature, operator, values)
+        subsets = [mask, ~mask]
+        y_pred = np.where(mask, 1, 0)
+
+        if ig is None:
+            ig = information_gain(y, subsets, weights, self.pos_weight)
+        if igr is None:
+            igr = information_gain_ratio(ig, intrinsic_information(y, subsets, weights))
+        if iv is None:
+            iv = information_value(y, subsets, weights, self.pos_weight)
+        if precision is None:
+            precision = get_precision(y_pred, y, weights)
+        if recall is None:
+            recall = get_recall(y_pred, y, weights)
+        if f_score is None:
+            f_score = get_f_score(precision, recall, self.beta, self.knot, self.factor)
+        if pos_amt is None:
+            pos_amt = (y * weights * y_pred).sum()
+        if total_recall is None:
+            total_recall = pos_amt / self.total_pos
+
+        print(f"  {split_name}: {operator} {self._value_to_sql(values)}")
+        print(f"    IG: {ig:.4g}, IGR: {igr:.4g}, IV: {iv:.4g}")
+        print(
+            f"    Precision: {precision:.2%}, Node Recall: {recall:.2%}, F-score: {f_score:.4g}"
+        )
+
+        metrics_str = f"    Positives: {pos_amt:.2f}, Total Recall: {total_recall:.2%}"
+        if extra_metrics is not None and isinstance(extra_metrics_data, pd.DataFrame):
+            for metric in extra_metrics:
+                metrics_str += f", {metric}: {extra_metrics[metric](extra_metrics_data.loc[mask]):.4f}".rstrip(
+                    "0"
+                ).rstrip(
+                    "."
+                )
+
+        print(metrics_str)
 
     def __repr__(self) -> str:
         """Return string representation of AsymmeTree parameters.
