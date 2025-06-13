@@ -155,7 +155,7 @@ def get_recall(y_pred, y_true, weights=1, total_pos=None):
     return _get_recall_njit(y_pred, y_true, weights, total_pos)
 
 
-def get_f1_score(precision, recall, beta=1, knot=1, factor=1):
+def get_f_score(precision, recall, beta=1, knot=1, factor=1):
     if precision == 0 or recall == 0:
         return 0
     if precision > knot:

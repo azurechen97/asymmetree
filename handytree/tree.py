@@ -66,7 +66,7 @@ class HandyTree:
         self,
         max_depth=5,
         max_cat_unique=50,
-        cat_value_min_ratio=0.005,
+        cat_value_min_recall=0.005,
         num_bin=25,
         node_max_precision=0.3,
         node_min_recall=0.05,
@@ -74,6 +74,7 @@ class HandyTree:
         feature_shown_num=5,
         condition_shown_num=5,
         sorted_by="f_score",
+        pos_weight=1,
         ignore_null=True,
         show_metrics=False,
         verbose=False,
@@ -81,7 +82,7 @@ class HandyTree:
         # Parameters initialization
         self.max_depth = max_depth
         self.max_cat_unique = max_cat_unique
-        self.cat_value_min_ratio = cat_value_min_ratio
+        self.cat_value_min_recall = cat_value_min_recall
         self.num_bin = num_bin
         self.node_max_precision = node_max_precision
         self.node_min_recall = node_min_recall
@@ -91,6 +92,7 @@ class HandyTree:
         self.feature_shown_num = feature_shown_num
         self.condition_shown_num = condition_shown_num
         self.sorted_by = sorted_by
+        self.pos_weight = pos_weight
         self.ignore_null = ignore_null
         self.show_metrics = show_metrics
         self.verbose = verbose
@@ -776,10 +778,230 @@ class HandyTree:
         nodes = {int(k): nodes[k] for k in nodes}
         self.from_dict(nodes)
 
-    def _best_split(
+    def _best_splits(
         self, X, y, weights, cat_features, lt_only_features, gt_only_features
     ):
-        pass
+        splits = {}
+        node_pos = (y * weights).sum()
+        for feature in X.columns:
+            if feature not in cat_features and is_numeric_dtype(X[feature]):
+                if self.verbose:
+                    print(
+                        f"Feature {feature} is neither categorical nor numeric, skipping..."
+                    )
+                continue
+            X_feature = X[feature].copy()
+            if feature in cat_features:
+                if self.ignore_null:
+                    categories = X_feature.dropna().unique()
+                else:
+                    categories = X_feature.unique()
+                num_unique = len(categories)
+
+                if num_unique <= 1:
+                    if self.verbose:
+                        print(
+                            f"Feature {feature} has only one unique value, skipping..."
+                        )
+                    continue
+
+                if self.max_cat_unique is not None and num_unique > self.max_cat_unique:
+                    if self.verbose:
+                        print(
+                            f"Feature {feature} has too many unique values, only use the most frequent {self.max_cat_unique} values..."
+                        )
+                    cnts = X_feature.value_counts(sort=True, ascending=False)
+                    categories = cnts.index[: self.max_cat_unique]
+                    X_feature.loc[~X_feature.isin(categories)] = pd.NA
+
+                pos_amts = (y * weights).groupby(X_feature).sum()
+                total_amts = weights.groupby(X_feature).sum()
+                precision = pos_amts / total_amts
+                recall = pos_amts / node_pos
+                metrics_df = pd.DataFrame(
+                    {
+                        "pos_amt": pos_amts,
+                        "total_amt": total_amts,
+                        "precision": precision,
+                        "recall": recall,
+                    }
+                )
+                metrics_df = metrics_df.loc[
+                    recall >= self.cat_value_min_recall
+                ].sort_values(by="precision", ascending=False)
+                if len(metrics_df) == 0:
+                    if self.verbose:
+                        print(
+                            f"Feature {feature} has low recall on all values, skipping..."
+                        )
+                    continue
+
+                category_sorted = np.array(metrics_df.index)
+
+                split_metrics = []
+                split = []
+
+                for category in category_sorted:
+                    split.append(category)
+                    grp = (
+                        metrics_df.index.isin(split)
+                        if is_bool_dtype(X_feature)
+                        else split
+                    )
+                    pos_amt = metrics_df.loc[grp, "pos_amt"].sum()
+                    total_recall = pos_amt / self.total_pos
+                    if total_recall < self.node_min_recall:
+                        continue
+
+                    mask = X_feature.isin(split)
+                    if np.sum(mask) == 0 or np.sum(~mask) == 0:
+                        break
+
+                    subsets = [mask, ~mask]
+
+                    ig = None
+                    igr = None
+                    iv = None
+                    precision = None
+                    recall = None
+                    f_score = None
+
+                    if self.sorted_by == "ig" or self.sorted_by == "igr":
+                        ig = information_gain(y, subsets, weights, self.pos_weight)
+                        if self.sorted_by == "igr":
+                            igr = information_gain_ratio(
+                                ig, intrinsic_information(y, subsets, weights)
+                            )
+                    if self.sorted_by == "iv":
+                        iv = information_value(y, subsets, weights, self.pos_weight)
+                    if self.sorted_by == "f_score":
+                        precision = pos_amt / metrics_df.loc[grp, "total_amt"].sum()
+                        recall = pos_amt / node_pos
+                        f_score = get_f_score(
+                            precision, recall, self.beta, self.knot, self.factor
+                        )
+
+                    if len(split) > num_unique // 2:
+                        not_split = [c for c in categories if c not in split]
+                        if len(not_split) == 1:
+                            split_values = not_split[0]
+                            operator = "<>"
+                        else:
+                            split_values = not_split.copy()
+                            operator = "not in"
+                    else:
+                        if len(split) == 1:
+                            split_values = split[0]
+                            operator = "="
+                        else:
+                            split_values = split.copy()
+                            operator = "in"
+                    split_info = {
+                        "feature": feature,
+                        "operator": operator,
+                        "split_values": split_values,
+                        "metrics": {
+                            "precision": precision,
+                            "recall": recall,
+                            "f_score": f_score,
+                            "ig": ig,
+                            "igr": igr,
+                            "iv": iv,
+                            "pos_amt": pos_amt,
+                            "total_recall": total_recall,
+                        },
+                    }
+                    split_metrics.append(split_info)
+                if len(split_metrics) > 0:
+                    split_metrics.sort(
+                        key=lambda x: x["metrics"][self.sorted_by], reverse=True
+                    )
+                    splits[feature] = split_metrics
+
+            elif is_numeric_dtype(X_feature):
+                _, thresholds = pd.qcut(
+                    X_feature, self.num_bin, retbins=True, duplicates="drop"
+                )
+                if len(thresholds) < 2:
+                    if self.verbose:
+                        print(
+                            f"Feature {feature} has less than 2 unique values, skipping..."
+                        )
+                    continue
+                thresholds = thresholds[1:-1]
+
+                split_metrics = []
+                for threshold in thresholds:
+                    mask = X_feature >= threshold
+                    if np.sum(mask) == 0 or np.sum(~mask) == 0:
+                        continue
+
+                    subsets = [mask, ~mask]
+                    ig = None
+                    igr = None
+                    iv = None
+
+                    if self.sorted_by == "ig" or self.sorted_by == "igr":
+                        ig = information_gain(y, subsets, weights, self.pos_weight)
+                        if self.sorted_by == "igr":
+                            igr = information_gain_ratio(
+                                ig, intrinsic_information(y, subsets, weights)
+                            )
+                    if self.sorted_by == "iv":
+                        iv = information_value(y, subsets, weights, self.pos_weight)
+
+                    operators = [">=", "<"]
+                    max_precision = 0
+                    best_split_info = None
+                    for j in [0, 1]:
+                        if operators[j] == ">=" and feature in lt_only_features:
+                            continue
+                        if operators[j] == "<" and feature in gt_only_features:
+                            continue
+
+                        y_pred = np.where(subsets[j], 1, 0)
+                        pos_amt = (y * weights * y_pred).sum()
+                        total_recall = pos_amt / self.total_pos
+                        if total_recall < self.node_min_recall:
+                            continue
+
+                        precision = pos_amt / np.sum(y_pred * weights)
+                        recall = pos_amt / node_pos
+                        f_score = get_f_score(
+                            precision, recall, self.beta, self.knot, self.factor
+                        )
+                        operator = operators[j]
+                        split_info = {
+                            "feature": feature,
+                            "operator": operator,
+                            "split_values": threshold,
+                            "metrics": {
+                                "precision": precision,
+                                "recall": recall,
+                                "f_score": f_score,
+                                "ig": ig,
+                                "igr": igr,
+                                "iv": iv,
+                                "pos_amt": pos_amt,
+                                "total_recall": total_recall,
+                            },
+                        }
+
+                        if not self.sorted_by in ["ig", "igr", "iv"]:
+                            split_metrics.append(split_info)
+                        elif precision > max_precision:
+                            best_split_info = split_info
+                            max_precision = precision
+
+                    if best_split_info is not None:
+                        split_metrics.append(best_split_info)
+                if len(split_metrics) > 0:
+                    split_metrics.sort(
+                        key=lambda x: x["metrics"][self.sorted_by], reverse=True
+                    )
+                    splits[feature] = split_metrics
+
+        return splits
 
     def _build_tree(
         self,
