@@ -523,7 +523,7 @@ class AsymmeTree:
                     node,
                 )
             else:
-                feature, operator, value = self._parse_partial_sql(sql)
+                feature, operator, value = self._parse_sql(sql)
                 _, _ = self._quick_split_node(
                     feature,
                     operator,
@@ -553,8 +553,8 @@ class AsymmeTree:
 
     def fit(
         self,
-        X,
-        y,
+        X=None,
+        y=None,
         weights=None,
         cat_features=None,
         lt_only_features=None,
@@ -799,7 +799,8 @@ class AsymmeTree:
                 node.prediction = left_child.prediction
                 node.is_leaf = True
                 node.children = None
-                _ = self.node_dict.pop(id)
+                _ = self.node_dict.pop(left_child.id)
+                _ = self.node_dict.pop(right_child.id)
 
     def clear_children(self, id: int = None):
         """Recursively remove all children of a node.
@@ -1625,7 +1626,7 @@ class AsymmeTree:
             split_info = None
             while True:
                 chosen_split = input(
-                    f"\nSelect a split condition by displayed rank number (default 0) or a SQL-style condition (e.g. >=100).\nCommands:\n  /m: More options\n  /b Back to feature selection\n  /q: Quit\n>> "
+                    f"\nSelect a split condition by displayed rank number (default 0) or a SQL-style condition (e.g. >=100).\nCommands:\n  /m: More options\n  /b: Back to feature selection\n  /q: Quit\n>> "
                 )
                 if chosen_split == "/q" or chosen_split == "/b":
                     split_info = chosen_split
@@ -1844,7 +1845,7 @@ class AsymmeTree:
             split_value=value,
             is_leaf=True,
             depth=node.depth + 1,
-            id=node.id * 2,
+            id=node.id * 2 + 1,
         )
         left_precision = get_precision(
             np.ones(len(y[left_mask]), dtype="float64"),
@@ -1881,7 +1882,7 @@ class AsymmeTree:
             split_value=value,
             is_leaf=True,
             depth=node.depth + 1,
-            id=node.id * 2 + 1,
+            id=node.id * 2 + 2,
         )
         right_precision = get_precision(
             np.ones(len(y[right_mask]), dtype="float64"),
