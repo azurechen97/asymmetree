@@ -8,3 +8,14 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Additional files
+.python-version
+.DS_Store
+__pycache__/
+.pytest_cache/
+htmlcov/
+.coverage
+
+# Additional file
+dummy_data.csv

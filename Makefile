@@ -1,7 +1,7 @@
 # AsymmeTree Makefile
 # Python project automation for development, testing, and deployment
 
-.PHONY: help install install-dev test lint format clean build publish run dev-run check-deps update-deps venv
+.PHONY: help install install-dev test lint format clean build publish run dev-run check-deps update-deps venv interactive run-custom-example
 
 # Default target
 help:
@@ -22,6 +22,8 @@ help:
 	@echo "  check-deps  Check for outdated dependencies"
 	@echo "  update-deps Update dependencies"
 	@echo "  venv        Create virtual environment"
+	@echo "  interactive Run in interactive mode"
+	@echo "  run-custom-example Run with a custom dataset"
 
 # Variables
 PYTHON := python3
@@ -93,13 +95,28 @@ publish: build
 
 # Run the main application
 run:
-	@echo "Running AsymmeTree..."
-	$(PYTHON) main.py
+	@echo "Running AsymmeTree in demo mode..."
+	$(PYTHON) main.py demo
 
 # Run in development mode with verbose output
 dev-run:
-	@echo "Running AsymmeTree in development mode..."
-	$(PYTHON) -v main.py
+	@echo "Running AsymmeTree in development mode (demo)..."
+	$(PYTHON) -v main.py demo
+
+# Run in interactive mode
+interactive:
+	@echo "Running AsymmeTree in interactive mode..."
+	$(PYTHON) main.py interactive
+
+# Example of a custom run. Users should modify this.
+run-custom-example:
+	@echo "Running AsymmeTree with a custom dataset..."
+	# Create a dummy data file for the example
+	@echo "target,feature1,feature2" > dummy_data.csv
+	@echo "1,10,20" >> dummy_data.csv
+	@echo "0,15,25" >> dummy_data.csv
+	$(PYTHON) main.py custom --data dummy_data.csv --target target --max-depth 3
+	@rm dummy_data.csv
 
 # Check for outdated dependencies
 check-deps:
