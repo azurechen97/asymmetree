@@ -268,9 +268,17 @@ class AsymmeTree:
 
         X_columns = self.X.columns.tolist()
         str_columns = [col for col in X_columns if is_string_dtype(self.X[col])]
+        if self.cat_features is None:
+            self.cat_features = []
         self.cat_features = [
             col for col in X_columns if col in str_columns or col in self.cat_features
         ]
+        if self.lt_only_features is None:
+            self.lt_only_features = []
+        if self.gt_only_features is None:
+            self.gt_only_features = []
+        if self.pinned_features is None:
+            self.pinned_features = []
 
         if self.weights is None:
             self.weights = np.ones(len(self.y), dtype=np.float64)
