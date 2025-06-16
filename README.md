@@ -85,19 +85,35 @@ tree.quick_split(id=4, sql="age >= 25", overwrite=True)
 # Configure for specific use case
 tree = AsymmeTree(
     max_depth=7,
-    max_cat_unique=20,
+    max_cat_unique=20, # Maximum unique values for categorical features
     cat_value_min_recall=0.005,  # Minimum recall for categorical values
-    sorted_by='f_score',
-    node_max_precision=0.3,
-    node_min_recall=0.05,
-    cat_features=['category', 'region'],
-    lt_only_features=['age'],  # Age can only use < operator
-    gt_only_features=['income'],  # Income can only use > operator
-    pinned_features=['risk_score'],  # Prioritize this feature
+    num_bin=25, # Number of bins for numerical feature discretization
+    node_max_precision=0.3, # Maximum precision threshold for node splitting
+    node_min_recall=0.05, # Minimum recall threshold for nodes
+    leaf_min_precision=0.15, # Minimum precision threshold for leaf nodes
+    feature_shown_num=5, # Number of features to show in interactive mode
+    condition_shown_num=5, # Number of conditions to show in interactive mode
+    sorted_by='f_score', # Metric to sort splits by ('f_score', 'ig', 'igr', 'iv')
+    pos_weight=1, # Weight for positive class in calculations
     beta=1,  # F-beta score parameter
     knot=1,  # Precision scaling threshold
     factor=1,  # Scaling factor for precision above knot
-    verbose=True
+    ignore_null=True, # Whether to ignore null values
+    show_metrics=False, # Whether to show metrics in tree display
+    verbose=False # Whether to print verbose output
+)
+
+tree.import_data(
+    X,
+    y,
+    weights, # Sample weights
+    cat_features=['category', 'region'], # List of categorical feature names
+    lt_only_features=['age'],  # Age can only use < operator
+    gt_only_features=['income'],  # Income can only use > operator
+    pinned_features=['risk_score'],  # Prioritize this feature
+    extra_metrics=extra_metrics, # Additional metrics to calculate
+    extra_metrics_data=extra_metrics_data, # Data for extra metrics
+    total_pos=total_pos, # Total positive samples for recall calculation
 )
 ```
 
@@ -128,12 +144,17 @@ patient_data = pd.DataFrame({
 medical_tree = AsymmeTree(
     max_depth=4,  # Keep rules simple
     show_metrics=True,
+    verbose=True
+)
+
+tree.fit(
+    X,
+    y,
     extra_metrics={
         'avg_cost': lambda x: x['cost'].mean(),
         'avg_severity': lambda x: x['severity_score'].mean()
     },
-    extra_metrics_data=patient_data,
-    verbose=True
+    extra_metrics_data=patient_data
 )
 ```
 
@@ -142,10 +163,11 @@ medical_tree = AsymmeTree(
 # Manufacturing defect detection
 qc_tree = AsymmeTree(
     sorted_by='igr',  # Use information gain ratio
-    cat_features=['machine_id', 'shift', 'operator'],
     num_bin=20,  # Fine-grained numerical splits
     ignore_null=False  # Include null as category
 )
+
+tree.fit(X, y, cat_features=['machine_id', 'shift', 'operator'])
 ```
 
 ## 📊 Performance Metrics
@@ -173,7 +195,9 @@ extra_data = pd.DataFrame({
     'amount': [...]    # Transaction amounts
 }, index=X.index)
 
-tree = AsymmeTree(
+tree = AsymmeTree()
+tree.import_data(
+    X, y, 
     extra_metrics={
         'business_value': business_value,
         'avg_transaction': avg_transaction_size
