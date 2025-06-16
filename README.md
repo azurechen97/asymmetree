@@ -126,8 +126,8 @@ AsymmeTree excels in scenarios with significant class imbalance (< 5% positive c
 # Fraud detection with high precision requirements
 fraud_tree = AsymmeTree(
     sorted_by='f_score',
-    node_max_precision=0.2,  # Stop splitting at 20% precision
-    leaf_min_precision=0.4,  # Require 40% precision for positive prediction
+    node_max_precision=0.4,  # Stop splitting at 40% precision
+    leaf_min_precision=0.2,  # Require 20% precision for positive prediction
     pos_weight=10  # Weight positive cases more heavily
 )
 ```
