@@ -19,13 +19,9 @@ AsymmeTree is an interactive decision tree classifier specifically designed for 
 ```bash
 # Clone the repository
 git clone https://github.com/azurechen97/asymmetree.git
-cd asymmetree
-
-# Install dependencies
-pip install -r requirements.txt
 
 # Install asymmetree
-pip install -e .
+pip install -e asymmetree/
 ```
 
 ## 🔧 Quick Start
