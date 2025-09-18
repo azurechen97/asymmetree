@@ -1,6 +1,7 @@
 import ast
 import re
 import json
+from datetime import datetime
 
 import numpy as np
 import pandas as pd
@@ -151,6 +152,7 @@ class AsymmeTree:
         ignore_null=True,
         show_metrics=False,
         verbose=False,
+        show_hints=True,
     ):
         """Initialize AsymmeTree with configuration parameters.
 
@@ -213,6 +215,71 @@ class AsymmeTree:
         self.tree = None
         self.node_dict = {}
         self.node_counter = 0
+
+        # For LLM
+        self.show_hints = show_hints
+        self.history = []
+        self._hint_buffer = []
+
+    def _log(self, event_type, content, print_now=None):
+        """Append an event to history and optionally print it.
+
+        Args:
+            event_type (str): 'hint' or 'action'.
+            content (str): Message content.
+            print_now (bool, optional): Override printing behavior. Defaults to self.show_hints.
+        """
+        self.history.append(
+            {
+                "type": event_type,
+                "content": content,
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            }
+        )
+        if print_now is None:
+            print_now = self.show_hints
+        if print_now:
+            print(content)
+
+    def _start_hint(self, content=""):
+        self._hint_buffer = [content] if content else []
+
+    def _append_hint(self, content):
+        self._hint_buffer.append(content)
+
+    def _flush_hint(self):
+        if not self._hint_buffer:
+            return ""
+        text = "\n".join(self._hint_buffer)
+        self._hint_buffer = []
+        self._log("hint", text, print_now=self.show_hints)
+        return text
+
+    def _hint(self, content=None, *, flush=True):
+        """Unified hint API: optionally append and optionally flush buffer.
+
+        Args:
+            content (str|None): Text to append to the hint buffer.
+            flush (bool): When True, flush buffer to history/output.
+            print_now (bool|None): Override printing behavior for this flush.
+
+        Returns:
+            str: Flushed text when flush=True, otherwise empty string.
+        """
+        if content:
+            self._append_hint(content)
+        if flush:
+            return self._flush_hint()
+        return ""
+
+    def _action(self, content=None):
+        return self._log("action", content, print_now=False)
+
+    def _ask(self, prompt=None):
+        if prompt:
+            self._hint(prompt, flush=True)
+        ans = input()
+        return self._action(ans)
 
     def import_data(
         self,
@@ -390,10 +457,15 @@ class AsymmeTree:
             raise ValueError(f"Node with id {id} not found")
 
         node = self.node_dict[id]
-        self.print(self.tree, current_node=node, show_metrics=self.show_metrics)
+        self._hint(
+            self.tree_structure(
+                self.tree, current_node=node, show_metrics=self.show_metrics
+            ),
+            flush=True,
+        )
 
         if not node.is_leaf and isinstance(node.children, list):
-            warning_msg = input(
+            warning_msg = self._ask(
                 f"WARNING: This operation will OVERWRITE the children of node {id}. Continue? (y/N): "
             )
             if warning_msg.lower() != "y":
@@ -437,11 +509,13 @@ class AsymmeTree:
                 node,
             )
         except ExitSplit as e:
-            print(str(e))
+            self._hint(str(e), flush=True)
 
-        print("\nCurrent tree:")
-        self.print(self.tree, show_metrics=self.show_metrics)
-        print("\nOverall performance:")
+        self._hint("\nCurrent tree:", flush=False)
+        self._hint(
+            self.tree_structure(self.tree, show_metrics=self.show_metrics), flush=True
+        )
+        self._hint("\nOverall performance:", flush=False)
         y_pred = self.predict(self.X)
         self.performance(
             pred=y_pred,
@@ -476,7 +550,7 @@ class AsymmeTree:
 
         if not node.is_leaf and isinstance(node.children, list):
             if overwrite:
-                print(
+                self._hint(
                     f"WARNING: This operation will OVERWRITE the children of node {id}."
                 )
             else:
@@ -536,11 +610,11 @@ class AsymmeTree:
                     node,
                 )
         except ExitSplit as e:
-            print(str(e))
+            self._hint(str(e), flush=True)
 
-        print("\nCurrent tree:")
+        self._hint("\nCurrent tree:", flush=False)
         self.print(self.tree, show_metrics=self.show_metrics)
-        print("\nOverall performance:")
+        self._hint("\nOverall performance:", flush=False)
         y_pred = self.predict(self.X)
         self.performance(
             pred=y_pred,
@@ -617,8 +691,9 @@ class AsymmeTree:
         extra_metrics_data = self.extra_metrics_data
         total_pos = self.total_pos
 
-        print(
-            f"Root Precision: {self.root_precision:.2%}, Total Pos: {self.total_pos:.2f}"
+        self._hint(
+            f"Root Precision: {self.root_precision:.2%}, Total Pos: {self.total_pos:.2f}",
+            flush=True,
         )
         extra_metrics_str = []
         if extra_metrics is not None and isinstance(extra_metrics_data, pd.DataFrame):
@@ -628,7 +703,7 @@ class AsymmeTree:
                         "0"
                     ).rstrip(".")
                 )
-                print(", ".join(extra_metrics_str))
+                self._hint(", ".join(extra_metrics_str), flush=True)
 
         self._build_tree(
             X,
@@ -646,13 +721,13 @@ class AsymmeTree:
 
         # Prune the tree
         if auto:
-            print("\nPrune the tree...")
+            self._hint("\nPrune the tree...", flush=True)
             self.relabel()
             self.prune()
 
-        print("\nTree built successfully. Current tree:")
+        self._hint("\nTree built successfully. Current tree:", flush=False)
         self.print(self.tree, show_metrics=self.show_metrics)
-        print("\nOverall performance:")
+        self._hint("\nOverall performance:", flush=False)
         y_pred = self.predict(X)
         self.performance(
             pred=y_pred,
@@ -690,7 +765,7 @@ class AsymmeTree:
             extra_metrics_data = None
         if not node.is_leaf and isinstance(node.children, list):
             self.print(self.tree, current_node=node, show_metrics=self.show_metrics)
-            warning_msg = input(
+            warning_msg = self._ask(
                 f"WARNING: This operation will OVERWRITE the children of node {id}. Continue? (y/N): "
             )
             if warning_msg.lower() != "y":
@@ -713,13 +788,13 @@ class AsymmeTree:
 
         # Prune the tree
         if auto:
-            print("\nPrune the tree...")
+            self._hint("\nPrune the tree...", flush=True)
             self.relabel()
             self.prune()
 
-        print("\nTree built successfully. Current tree:")
+        self._hint("\nTree built successfully. Current tree:", flush=False)
         self.print(self.tree, show_metrics=self.show_metrics)
-        print("\nOverall performance:")
+        self._hint("\nOverall performance:", flush=False)
         y_pred = self.predict(X)
         self.performance(
             pred=y_pred,
@@ -890,10 +965,37 @@ class AsymmeTree:
             extra_metrics_data (pd.DataFrame, optional): Data for extra metrics.
             total_pos (float, optional): Total positive samples.
         """
+        self._hint(
+            self.performance_str(
+                pred, true, weights, extra_metrics, extra_metrics_data, total_pos
+            ),
+            flush=True,
+        )
+
+    def performance_str(
+        self,
+        pred=None,
+        true=None,
+        weights=None,
+        extra_metrics=None,
+        extra_metrics_data=None,
+        total_pos=None,
+    ):
+        """Print performance metrics for predictions.
+
+        Args:
+            pred (np.array, optional): Predictions. Defaults to model predictions.
+            true (pd.Series, optional): True labels. Defaults to training labels.
+            weights (pd.Series, optional): Sample weights. Defaults to training weights.
+            extra_metrics (dict, optional): Additional metrics. Defaults to model extra_metrics.
+            extra_metrics_data (pd.DataFrame, optional): Data for extra metrics.
+            total_pos (float, optional): Total positive samples.
+        """
+        output = []
         metrics = self.metrics(
             pred, true, weights, extra_metrics, extra_metrics_data, total_pos
         )
-        print(
+        output.append(
             f"Precision: {metrics['Precision']:.2%}, Recall: {metrics['Recall']:.2%}, Positives: {metrics['Positives']:.2f}"
         )
         extra_metrics_str = []
@@ -902,7 +1004,8 @@ class AsymmeTree:
                 extra_metrics_str.append(
                     f"{metric}: {metrics[metric]:.4f}".rstrip("0").rstrip(".")
                 )
-        print(", ".join(extra_metrics_str))
+        output.append(", ".join(extra_metrics_str))
+        return "\n".join(output)
 
     def predict(self, X):
         """Generate predictions for given features.
@@ -927,6 +1030,22 @@ class AsymmeTree:
             show_metrics (bool): Whether to display node metrics. Defaults to False.
             depth (int): Current depth for indentation. Defaults to 0.
         """
+        self._hint(
+            self.tree_structure(node, current_node, show_metrics, depth), flush=True
+        )
+
+    def tree_structure(
+        self, node: Node = None, current_node: Node = None, show_metrics=False, depth=0
+    ):
+        """Print tree structure in a readable format.
+
+        Args:
+            node (Node, optional): Node to start printing from. Defaults to root.
+            current_node (Node, optional): Node to highlight as current.
+            show_metrics (bool): Whether to display node metrics. Defaults to False.
+            depth (int): Current depth for indentation. Defaults to 0.
+        """
+        output = []
         if node is None:
             node = self.tree
 
@@ -948,14 +1067,17 @@ class AsymmeTree:
 
         if current_node is not None and current_node.id == node.id:
             node_str = "<<" + node_str + ">> <- Current Node"
-        print(prefix + node_str)
+        output.append(prefix + node_str)
 
         if isinstance(node.children, list):
             for child in node.children:
-                self.print(child, current_node, show_metrics, depth + 1)
+                output.append(
+                    self.tree_structure(child, current_node, show_metrics, depth + 1)
+                )
 
         if node.is_leaf and node.children is None:
-            print(f"{prefix}--> Prediction: {node.prediction}")
+            output.append(f"{prefix}--> Prediction: {node.prediction}")
+        return "\n".join(output)
 
     def to_sql(self, node: Node = None):
         """Convert tree to SQL WHERE clause representation.
@@ -1057,7 +1179,7 @@ class AsymmeTree:
         if self.X is not None:
             self.reset_tree_data(node=self.tree)
         else:
-            print(
+            self._hint(
                 "Tree imported successfully. Please use import_data method to import data."
             )
 
@@ -1113,9 +1235,14 @@ class AsymmeTree:
         splits = {}
         node_pos = (y * weights).sum()
         for feature in X.columns:
-            if feature not in cat_features and is_numeric_dtype(X[feature]):
+            if (
+                feature not in cat_features
+                and not is_numeric_dtype(X[feature])
+                and not is_bool_dtype(X[feature])
+                and not is_string_dtype(X[feature])
+            ):
                 if self.verbose:
-                    print(
+                    self._hint(
                         f"Feature {feature} is neither categorical nor numeric, skipping..."
                     )
                 continue
@@ -1129,14 +1256,14 @@ class AsymmeTree:
 
                 if num_unique <= 1:
                     if self.verbose:
-                        print(
+                        self._hint(
                             f"Feature {feature} has only one unique value, skipping..."
                         )
                     continue
 
                 if self.max_cat_unique is not None and num_unique > self.max_cat_unique:
                     if self.verbose:
-                        print(
+                        self._hint(
                             f"Feature {feature} has too many unique values, only use the most frequent {self.max_cat_unique} values..."
                         )
                     cnts = X_feature.value_counts(sort=True, ascending=False)
@@ -1160,7 +1287,7 @@ class AsymmeTree:
                 ].sort_values(by="precision", ascending=False)
                 if len(metrics_df) == 0:
                     if self.verbose:
-                        print(
+                        self._hint(
                             f"Feature {feature} has low recall on all values, skipping..."
                         )
                     continue
@@ -1253,7 +1380,7 @@ class AsymmeTree:
                 )
                 if len(thresholds) < 2:
                     if self.verbose:
-                        print(
+                        self._hint(
                             f"Feature {feature} has less than 2 unique values, skipping..."
                         )
                     continue
@@ -1381,24 +1508,24 @@ class AsymmeTree:
                     ).rstrip(
                         "."
                     )
-            print(metrics_str)
+            self._hint(metrics_str, flush=True)
 
         if (
             node.operator in (">=", ">") and node.split_feature in lt_only_features
         ) or (node.operator in ("<=", "<") and node.split_feature in gt_only_features):
-            print(
+            self._hint(
                 "Cannot split due to lt_only_features or gt_only_features constraints."
             )
             print_exit_message()
             return
 
         if node.depth >= self.max_depth:
-            print(f"Reached max depth {self.max_depth}.")
+            self._hint(f"Reached max depth {self.max_depth}.", flush=True)
             print_exit_message()
             return
 
         if precision > self.node_max_precision:
-            print(
+            self._hint(
                 f"Precision {precision:.2%} reached satisfactory level {self.node_max_precision:.2%}."
             )
             print_exit_message()
@@ -1419,16 +1546,16 @@ class AsymmeTree:
                 node,
             )
         except ExitSplit as e:
-            print(str(e))
+            self._hint(str(e), flush=True)
             if str(e) == "Exit by user.":
-                print("Continue to next node.")
+                self._hint("Continue to next node.", flush=True)
             print_exit_message()
             return
 
         if isinstance(node.children, list) and len(node.children) >= 2:
             left_node = node.children[0]
             right_node = node.children[1]
-            print(f"\nFinding split for node {left_node.id}:")
+            self._hint(f"\nFinding split for node {left_node.id}:", flush=True)
             if isinstance(extra_metrics_data, pd.DataFrame):
                 self._build_tree(
                     X[left_mask],
@@ -1458,7 +1585,7 @@ class AsymmeTree:
                     left_node,
                 )
 
-            print(f"\nFinding split for node {right_node.id}:")
+            self._hint(f"\nFinding split for node {right_node.id}:", flush=True)
             if isinstance(extra_metrics_data, pd.DataFrame):
                 self._build_tree(
                     X[right_mask],
@@ -1568,21 +1695,24 @@ class AsymmeTree:
             top_features = pinned_feature_splits + top_features
             ranked_start_idx = len(pinned_feature_splits)
 
-        print(f"\nCurrent depth: {node.depth}")
+        self._hint(f"\nCurrent depth: {node.depth}")
 
         def input_feature():
+            self._flush_hint()
             feature_max_idx = self.feature_shown_num
             chosen_feature = None
             while True:
-                chosen_feature = input(
+                chosen_feature = self._ask(
                     f"\nSelect a feature by displayed rank number (default {ranked_start_idx}) or feature name (case sensitive).\nCommands:\n  /m: More options\n  /q: Quit\n>> "
                 )
                 if chosen_feature == "/q":
                     break
                 elif chosen_feature == "/m":
-                    print()
                     if feature_max_idx > len(top_features):
-                        print(f"Only {len(top_features)} features are available.")
+                        self._hint(
+                            f"Only {len(top_features)} features are available.",
+                            flush=True,
+                        )
                     else:
                         for i, split in enumerate(
                             top_features[
@@ -1591,9 +1721,13 @@ class AsymmeTree:
                             ]
                         ):
                             if feature_max_idx + i == ranked_start_idx:
-                                print(f"\nBest features and split values:")
+                                self._hint(
+                                    f"\nBest features and split values:", flush=False
+                                )
                                 feature, splits_info = split
-                                print(f"{feature_max_idx + i}. {feature}")
+                                self._hint(
+                                    f"{feature_max_idx + i}. {feature}", flush=False
+                                )
                                 split_info = splits_info[0]
                                 self._print_metrics(
                                     split_info,
@@ -1605,7 +1739,7 @@ class AsymmeTree:
                                     "Best Split",
                                 )
                                 feature_max_idx += self.feature_shown_num
-                elif chosen_feature == "":
+                elif chosen_feature == "" or chosen_feature is None:
                     chosen_feature = top_features[ranked_start_idx][0]
                     break
                 elif chosen_feature.isdigit() and int(chosen_feature) < len(
@@ -1614,27 +1748,29 @@ class AsymmeTree:
                     chosen_feature = top_features[int(chosen_feature)][0]
                     break
                 elif chosen_feature not in top_features:
-                    print(f"Invalid feature name. Please try again.")
+                    self._hint(f"Invalid feature name. Please try again.", flush=True)
                 elif chosen_feature not in splits:
-                    print(f"No split found for feature {chosen_feature}.")
+                    self._hint(
+                        f"No split found for feature {chosen_feature}.", flush=True
+                    )
                 else:
                     break
             return chosen_feature
 
         def input_condition(chosen_feature):
+            self._flush_hint()
             split_max_idx = self.condition_shown_num
             split_info = None
             while True:
-                chosen_split = input(
+                chosen_split = self._ask(
                     f"\nSelect a split condition by displayed rank number (default 0) or a SQL-style condition (e.g. >=100).\nCommands:\n  /m: More options\n  /b: Back to feature selection\n  /q: Quit\n>> "
                 )
                 if chosen_split == "/q" or chosen_split == "/b":
                     split_info = chosen_split
                     break
                 elif chosen_split == "/m":
-                    print()
                     if split_max_idx > len(splits[chosen_feature]):
-                        print(
+                        self._hint(
                             f"Only {len(splits[chosen_feature])} splits are available."
                         )
                     else:
@@ -1653,7 +1789,7 @@ class AsymmeTree:
                                 f"Split {split_max_idx + j}",
                             )
                             split_max_idx += self.condition_shown_num
-                elif chosen_split == "":
+                elif chosen_split == "" or chosen_split is None:
                     split_info = splits[chosen_feature][0]
                     break
                 elif chosen_split.isdigit():
@@ -1662,9 +1798,12 @@ class AsymmeTree:
                         split_info = splits[chosen_feature][chosen_split]
                         break
                     except:
-                        print(f"Invalid split index. Please try again.")
+                        self._hint(
+                            f"Invalid split index. Please try again.", flush=True
+                        )
                 else:
                     try:
+                        self._flush_hint()
                         while True:
                             custom_operator, custom_value = self._parse_partial_sql(
                                 chosen_split
@@ -1677,7 +1816,7 @@ class AsymmeTree:
                                 y,
                                 weights,
                             )
-                            print("\nDetected custom split condition.")
+                            self._hint("\nDetected custom split condition.", flush=True)
                             self._print_metrics(
                                 split_info,
                                 X,
@@ -1687,22 +1826,24 @@ class AsymmeTree:
                                 extra_metrics_data,
                                 "Custom Split",
                             )
-                            satisfied = input(
+                            satisfied = self._ask(
                                 f"\nIf satisfied, press Enter. Otherwise, enter another condition.\n>> "
                             )
-                            if satisfied == "":
+                            if satisfied == "" or satisfied is None:
                                 break
                             else:
                                 chosen_split = satisfied
                         break
                     except:
-                        print(f"Invalid SQL condition. Please try again.")
+                        self._hint(
+                            f"Invalid SQL condition. Please try again.", flush=True
+                        )
             return split_info
 
         if auto:
             chosen_feature, split_info = top_features[ranked_start_idx]
             split_info = split_info[0]
-            print(f"\nAuto-selected feature {chosen_feature}.")
+            self._hint(f"\nAuto-selected feature {chosen_feature}.", flush=True)
             self._print_metrics(
                 split_info,
                 X,
@@ -1714,12 +1855,12 @@ class AsymmeTree:
             )
         else:
             if ranked_start_idx >= 0:
-                print("Pinned features and split values:")
+                self._hint("Pinned features and split values:", flush=False)
             for i, split in enumerate(top_features[: self.feature_shown_num]):
                 if i == ranked_start_idx:
-                    print(f"\nBest features and split values:")
+                    self._hint("\nBest features and split values:", flush=False)
                 feature, splits_info = split
-                print(f"{i}. {feature}")
+                self._hint(f"{i}. {feature}", flush=False)
                 split_info = splits_info[0]
                 self._print_metrics(
                     split_info,
@@ -1733,11 +1874,14 @@ class AsymmeTree:
 
             split_info = None
             while not isinstance(split_info, dict):
+                self._flush_hint()
                 chosen_feature = input_feature()
                 if chosen_feature == "/q":
                     raise ExitSplit("Exit by user.")
 
-                print(f"\nFeature {chosen_feature} is selected. Top splits:")
+                self._hint(
+                    f"\nFeature {chosen_feature} is selected. Top splits:", flush=False
+                )
                 for j, split_info in enumerate(
                     splits[chosen_feature][: self.condition_shown_num]
                 ):
@@ -1905,11 +2049,15 @@ class AsymmeTree:
         self.node_counter = len(self.node_dict)
         node.children.append(right_node)
 
-        print(
-            f"\nChild nodes created: {left_node.id} (positive) and {right_node.id} (negative)"
+        self._hint(
+            f"\nChild nodes created: {left_node.id} (positive) and {right_node.id} (negative)",
+            flush=True,
         )
         if na_cnt > 0:
-            print(f"Omitted {na_cnt} rows with null values in Node {right_node.id}.")
+            self._hint(
+                f"Omitted {na_cnt} rows with null values in Node {right_node.id}.",
+                flush=True,
+            )
 
         return left_mask, right_mask
 
@@ -2139,6 +2287,23 @@ class AsymmeTree:
         extra_metrics_data,
         split_name="Split",
     ):
+        self._hint(
+            self._metrics_str(
+                split_info, X, y, weights, extra_metrics, extra_metrics_data, split_name
+            ),
+            flush=False,
+        )
+
+    def _metrics_str(
+        self,
+        split_info,
+        X,
+        y,
+        weights,
+        extra_metrics,
+        extra_metrics_data,
+        split_name="Split",
+    ):
         """Print detailed performance metrics for a split condition.
 
         Displays comprehensive metrics including information gain, precision,
@@ -2153,6 +2318,8 @@ class AsymmeTree:
             extra_metrics_data (pd.DataFrame, optional): Data for extra metrics.
             split_name (str): Name/label for the split in the output. Defaults to "Split".
         """
+        output = []
+
         feature = split_info["feature"]
         operator = split_info["operator"]
         value = split_info["split_value"]
@@ -2187,9 +2354,9 @@ class AsymmeTree:
         if total_recall is None:
             total_recall = pos_amt / self.total_pos
 
-        print(f"  {split_name}: {operator} {self._value_to_sql(value)}")
-        print(f"    IG: {ig:.4g}, IGR: {igr:.4g}, IV: {iv:.4g}")
-        print(
+        output.append(f"  {split_name}: {operator} {self._value_to_sql(value)}")
+        output.append(f"    IG: {ig:.4g}, IGR: {igr:.4g}, IV: {iv:.4g}")
+        output.append(
             f"    Precision: {precision:.2%}, Node Recall: {recall:.2%}, F-score: {f_score:.4g}"
         )
 
@@ -2202,7 +2369,8 @@ class AsymmeTree:
                     "."
                 )
 
-        print(metrics_str)
+        output.append(metrics_str)
+        return "\n".join(output)
 
     def __repr__(self) -> str:
         """Return string representation of AsymmeTree parameters.

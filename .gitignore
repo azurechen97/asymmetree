@@ -19,3 +19,5 @@ htmlcov/
 
 # Additional file
 dummy_data.csv
+
+data/
